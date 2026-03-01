@@ -6,8 +6,7 @@ const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
     cors: {
-        //origin: "https://12av1-jason-backshot-simulator.vercel.app", // PROD
-        origin: "*",    // DEV
+        origin: "*",
         methods: ["GET", "POST"]
     }
 });
