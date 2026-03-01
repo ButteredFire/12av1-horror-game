@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>json backshot simulator</title>
+    <style>
+      body { margin: 0; overflow: hidden; background: #000; }
+      #instructions {
+        position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+        color: white; font-family: sans-serif; text-align: center; cursor: pointer;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="instructions"><h1>Click to Start</h1><p>(WASD to move, Mouse to look)</p></div>
+    <script type="module" src="/src/main.js"></script>
+    <div id="joystick-zone" style="position: absolute; bottom: 0; left: 0; width: 20%; height: 20%; z-index: 10;"></div>
+  </body>
+
+</html>
