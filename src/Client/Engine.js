@@ -23,7 +23,7 @@ export class Engine {
     async init() {
         this.initGraphics();
 
-        this.network = new NetworkManager("http://34.75.12.84:3000", this.scene);
+        this.network = new NetworkManager("https://api.oriviet.org", this.scene);
         this.controls = new PlayerController(this.camera, this.renderer.domElement);
         this.entityManager = new EntityManager(this.scene);
 
