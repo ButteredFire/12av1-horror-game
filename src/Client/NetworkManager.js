@@ -1,8 +1,10 @@
 import { io } from "socket.io-client";
 
 export class NetworkManager {
-    constructor(url, scene) {
-        this.socket = io(url);
+    constructor(url, scene, playerName) {
+        this.socket = io(url, {
+            query: { playerName: playerName }
+        });
         this.scene = scene;
     }
 

@@ -5,7 +5,9 @@ import { EntityManager } from "./EntityManager";
 
 
 export class Engine {
-    constructor() {
+    constructor(playerName) {
+        this.playerName = playerName;
+
         this.timer = new THREE.Clock();
         this.scene = new THREE.Scene();
         this.renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -23,11 +25,12 @@ export class Engine {
     async init() {
         this.initGraphics();
 
-        this.network = new NetworkManager("https://api.oriviet.org", this.scene);
+        const URL_PROD = "https://api.oriviet.org";
+        const URL_DEV = "http://localhost:3000";
+
+        this.network = new NetworkManager(URL_PROD, this.scene, this.playerName);
         this.controls = new PlayerController(this.camera, this.renderer.domElement);
         this.entityManager = new EntityManager(this.scene);
-
-        
 
         this.initScene();
         this.initNetworking();
@@ -72,13 +75,13 @@ export class Engine {
 
         // Entities
         this.entityManager.spawnCoins(15);
-        /*
+        
         this.entityManager.spawnNextbot("/jason.jpg");
 
         this.network.addEvent("nextbotUpdate", (pos) => {
             this.entityManager.updateNextbot(pos);
         });
-        */
+        
     }
 
 
@@ -93,11 +96,11 @@ export class Engine {
         });
 
         this.network.addEvent("newPlayer", (data) => {
-            this.entityManager.addRemotePlayer(data.id, data.pos);
+            this.entityManager.addRemotePlayer(data.id, data.playerData);
         });
         
         this.network.addEvent("playerMoved", (data) => {
-            this.entityManager.updateRemotePlayer(data.id, data.pos);
+            this.entityManager.updateRemotePlayer(data.id, data.playerData);
         });
         
         this.network.addEvent("playerDisconnected", (id) => {
@@ -138,6 +141,8 @@ export class Engine {
 
         const camRotation = { y: this.camera.rotation.y };
         this.network.sync(this.camera.position, camRotation);
+
+        this.entityManager.update(dt);
         
         this.flashlight.position.copy(this.camera.position);
 

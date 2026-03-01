@@ -6,7 +6,8 @@ const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
     cors: {
-        origin: "https://12av1-jason-backshot-simulator.vercel.app",
+        //origin: "https://12av1-jason-backshot-simulator.vercel.app", // PROD
+        origin: "*",    // DEV
         methods: ["GET", "POST"]
     }
 });
@@ -16,18 +17,24 @@ let nextbotPos = { x: 10, y: 0, z: 10 };
 const NEXTBOT_SPEED = 0.2;
 
 io.on("connection", (socket) => {
-    players[socket.id] = { x: 0, y: 0, z: 0, ry: 0 };
+    const playerName = socket.handshake.query.playerName || "Ragamuffin";
+    players[socket.id] = { playerName: playerName, x: 0, y: 0, z: 0, ry: 0 };
+
+    console.log(players);
 
     // Send the current world state to the new player
     socket.emit("init", { id: socket.id, players });
 
     // Inform others
-    socket.broadcast.emit("newPlayer", { id: socket.id, pos: players[socket.id] });
+    socket.broadcast.emit("newPlayer", { id: socket.id, playerData: players[socket.id] });
 
     socket.on("move", (data) => {
         if (players[socket.id]) {
-            players[socket.id] = data;
-            socket.broadcast.emit("playerMoved", { id: socket.id, pos: data });
+            players[socket.id].x = data.x;
+            players[socket.id].y = data.y;
+            players[socket.id].z = data.z;
+            players[socket.id].ry = data.ry;
+            socket.broadcast.emit("playerMoved", { id: socket.id, playerData: players[socket.id] });
         }
     });
 

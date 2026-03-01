@@ -12,6 +12,17 @@ export class EntityManager {
         this.loader = new GLTFLoader();
         this.mannequinTemplate = null;
     }
+
+
+    update(dt) {
+        // Linear interpolation on player positions
+        const lerpFactor = 0.15; 
+        this.remotePlayers.forEach((player) => {
+            player.mesh.position.lerp(player.targetPos, lerpFactor);
+            
+            player.mesh.rotation.y += (player.targetRot - player.mesh.rotation.y) * lerpFactor;
+        });
+    }
     
     
     async loadAssets() {
@@ -32,31 +43,68 @@ export class EntityManager {
     }
 
 
-    addRemotePlayer(id, pos) {
-        if (!this.mannequinTemplate) return;
-
-        // Clone the template so each player is a unique instance
-        const mesh = this.mannequinTemplate.clone();
-        mesh.position.set(pos.x, 0, pos.z); // Adjust Y based on your model's origin
+    createNameplate(name) {
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d");
+        canvas.width = 256;
+        canvas.height = 64;
+    
+        // Background
+        ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+        // Text Style
+        ctx.font = "bold 32px Arial";
+        ctx.fillStyle = "white";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(name, canvas.width / 2, canvas.height / 2);
+    
+        const texture = new THREE.CanvasTexture(canvas);
+        const spriteMat = new THREE.SpriteMaterial({ map: texture });
+        const sprite = new THREE.Sprite(spriteMat);
         
-        this.scene.add(mesh);
-        this.remotePlayers.set(id, mesh);
+        // Position nameplate above the player model
+        sprite.scale.set(2, 0.5, 1);
+        sprite.position.y = 3; 
+        
+        return sprite;
     }
 
-    updateRemotePlayer(id, pos) {
-        const mesh = this.remotePlayers.get(id);
-        if (mesh) {
-            mesh.position.set(pos.x, 0, pos.z);
-            if (pos.ry !== undefined) {
-                mesh.rotation.y = pos.ry;
-            }
+
+    addRemotePlayer(id, data) {
+        if (!this.mannequinTemplate) return;
+
+        const group = new THREE.Group(); // Model + nameplate group
+        const model = this.mannequinTemplate.clone();
+        const nameplate = this.createNameplate(data.playerName || "Ragamuffin");
+
+        group.add(model);
+        group.add(nameplate);
+        group.position.set(data.x, 0, data.z);
+
+        this.scene.add(group);
+        
+        this.remotePlayers.set(id, {
+            mesh: group,
+            targetPos: new THREE.Vector3(data.x, 0, data.z),
+            targetRot: data.ry || 0
+        });
+    }
+
+    updateRemotePlayer(id, data) {
+        const player = this.remotePlayers.get(id);
+        if (player) {
+            player.targetPos.set(data.x, 0, data.z);
+            if (data.ry !== undefined)
+                player.targetRot = data.ry;
         }
     }
 
     removeRemotePlayer(id) {
-        const mesh = this.remotePlayers.get(id);
-        if (mesh) {
-            this.scene.remove(mesh);
+        const player = this.remotePlayers.get(id);
+        if (player) {
+            this.scene.remove(player.mesh);
             this.remotePlayers.delete(id);
         }
     }
