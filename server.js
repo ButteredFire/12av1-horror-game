@@ -5,7 +5,10 @@ import { Server } from 'socket.io';
 const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
-    cors: { origin: "*" } 
+    cors: {
+        origin: "https://12av1-jason-backshot-simulator.vercel.app",
+        methods: ["GET", "POST"]
+    }
 });
 
 let players = {};
