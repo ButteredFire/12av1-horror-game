@@ -22,7 +22,7 @@ const NEXTBOT_SPEED = 0.25;
 
 
 const nextbotCount = 10;
-const botTypes = ["obunga", "jason", "jerma", "jerma", "pinhead"];
+const botTypes = ["jason", "jerma", "obunga"];
 function randRange(min, max) { return Math.random() * (max - min) + min; }
 function randRangeInt(min, max) { return Math.round(Math.random()) * (max - min) + min; }
 for (let i = 0; i < nextbotCount; i++) {
@@ -34,13 +34,16 @@ for (let i = 0; i < nextbotCount; i++) {
 }
 
 
+console.log(nextbots);
+
 
 io.on("connection", (socket) => {
+    console.log("NEW CONNECTION RECEIVED");
+
     const playerName = socket.handshake.query.playerName || "Ragamuffin";
     players[socket.id] = { playerName: playerName, x: 0, y: 0, z: 0, ry: 0 };
 
     console.log(players);
-    console.log(nextbots);
 
     // Send the current world state to the new player
     socket.emit("init", {
@@ -70,8 +73,8 @@ io.on("connection", (socket) => {
 
 
 
-const BOT_RADIUS = 1.2; // Distance to keep between bots
-const SEPARATION_WEIGHT = 0.05; // How strongly they push away
+const BOT_RADIUS = 5.0; // Distance to keep between bots
+const SEPARATION_WEIGHT = 0.1; // How strongly they push away
 
 function applySeparation(currentBot, allBots) {
     let pushX = 0;

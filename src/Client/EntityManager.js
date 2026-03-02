@@ -144,8 +144,8 @@ export class EntityManager {
         
         this.audioLoader.load(`/thick-of-it.mp3`, (buffer) => {
             sound.setBuffer(buffer);
-            sound.setRefDistance(2);   // Distance where volume starts dropping
-            sound.setMaxDistance(20);  // Distance where it becomes silent
+            sound.setRefDistance(10);   // Distance where volume starts dropping
+            sound.setMaxDistance(50);  // Distance where it becomes silent
             sound.setLoop(true);
             sound.setVolume(1.0);
             sound.play();

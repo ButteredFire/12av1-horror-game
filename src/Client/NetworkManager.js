@@ -6,20 +6,23 @@ export class NetworkManager {
         this.scene = scene;
         this.playerName = playerName;
 
-        this.handleSocketConnectivity();
+        this.currentUrlIdx = 0;
+        this.initSocket();
     }
 
 
-    handleSocketConnectivity() {
+    initSocket() {
         const disconnectOverlay = document.getElementById("disconnect-overlay");
         const disconnectLog = document.getElementById("disconnect-log");
 
         const socketData = {
+            forceNew: true,
             query: { playerName: this.playerName }
         };
-        let currentUrlIdx = 0, reconnectionTries = 0;
+        
+        let reconnectionTries = 0;
 
-        this.socket = io(this.urls[currentUrlIdx], socketData);
+        this.socket = io(this.urls[this.currentUrlIdx], socketData);
 
 
         this.socket.on("connect", () => {
@@ -30,31 +33,32 @@ export class NetworkManager {
                 disconnectOverlay.style.display = "none";
             });
 
-            currentUrlIdx = 0;
+            this.currentUrlIdx = 0;
             reconnectionTries = 0;
         });
 
         
         this.socket.on("connect_error", (err) => {
-            console.error("An error occurred with connection:", err.message);
-
             requestAnimationFrame(() => {
                 disconnectOverlay.classList.add("visible");
                 disconnectOverlay.style.display = "flex";
             });
 
-            console.log(currentUrlIdx);
-            console.log(reconnectionTries);
+            
             if (reconnectionTries >= 2) {
                 disconnectLog.innerHTML = `Reconnection failed with error: ${err.message}. Switching to next available server...`;
 
-                currentUrlIdx = (currentUrlIdx + 1) % this.urls.length;
+                this.currentUrlIdx = (this.currentUrlIdx + 1) % this.urls.length;
                 reconnectionTries = 0;
 
-                this.socket = io(this.urls[currentUrlIdx], socketData);
+                this.socket.disconnect();
+                
+                setTimeout(() => {
+                    this.initSocket();
+                }, 1000); 
             }
             else {
-                disconnectLog.innerHTML = `Attempting to reconnect to ${this.urls[currentUrlIdx]}...`;
+                disconnectLog.innerHTML = `Attempting to reconnect to ${this.urls[this.currentUrlIdx]}...`;
 
                 reconnectionTries++;
             }
