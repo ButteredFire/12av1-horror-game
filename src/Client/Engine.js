@@ -25,7 +25,10 @@ export class Engine {
     async init() {
         this.initGraphics();
 
-        this.network = new NetworkManager("https://api.oriviet.org", this.scene, this.playerName);
+        const PROD_SERVERS = ["https://api.oriviet.org", "https://win-api.oriviet.org"];
+        const DEV_SERVERS = ["http://localhost:3000"];
+
+        this.network = new NetworkManager(PROD_SERVERS, this.scene, this.playerName);
         this.controls = new PlayerController(this.camera, this.renderer.domElement);
         this.entityManager = new EntityManager(this.scene, this.listener);
 

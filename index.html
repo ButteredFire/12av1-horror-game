@@ -3,26 +3,51 @@
   <head>
     <meta charset="UTF-8" />
     <title>json backshot simulator</title>
-    <style>
-      body { margin: 0; overflow: hidden; background: #000; }
-    </style>
+    <link rel="stylesheet" href="./src/style.css">
   </head>
 
+
+  <!-- Login-->
   <body style="color: white; font-family: sans-serif;">
-    <div id="login-screen" style="position: fixed; z-index: 100; background: black; width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center;">
+    <div id="login-screen">
       <h2>The Boys of 12AV1 Present:</h2>
       <h1>JASON BACKSHOT SIMULATOR 9000</h1>
       <h3>enter your name gng</h3>
-      <input type="text" id="username-input" maxlength="12" style="padding: 10px; font-size: 20px;" />
+      <input type="text" id="username-input" maxlength="30" style="padding: 10px; font-size: 20px;" />
       <button id="start-button" style="margin-top: 20px; padding: 10px 40px; cursor: pointer;">LESSSGO</button>
     </div>
 
+
+    <!-- Player & game telemetry data-->
     <div id="telemetry">
       <h3 id="player-pos" style="position: absolute; top: 5%; left: 5%;"></h3>
     </div>
 
+
+    <!-- Mobile controls -->
     <script type="module" src="/src/main.js"></script>
     <div id="joystick-zone" style="position: absolute; bottom: 0; left: 0; width: 20%; height: 20%; z-index: 10;"></div>
+
+
+    <!-- Disconnect overlay -->
+    <div id="disconnect-overlay" class="visible">
+      <img src="./public/disconnect-img.jpg" style="max-height: 40vh;"/>
+      <h1>Lost Connection To Server</h1>
+      <h2 style="margin: 0;">idk gng, js wait here while the client tries to reconnect</h2>
+      <p id="disconnect-log" style="font-family: monospace;"></p>
+      <p style="margin: 0;"> <!-- Empty <p> for the sole purpose of padding -->
+        <div class="loader">
+          <span></span><span></span><span></span>
+        </div>
+      </p>
+    </div>
+
+
+    <script>
+      const disconnectOverlay = document.getElementById("disconnect-overlay");
+      disconnectOverlay.classList.remove("visible");
+      disconnectOverlay.style.display = "none";
+    </script>
   </body>
 
 </html>
