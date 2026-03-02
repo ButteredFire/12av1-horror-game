@@ -75,7 +75,8 @@ export class Engine {
         // Entities
         this.entityManager.spawnCoins(15);
         
-        this.entityManager.spawnNextbot("/jason.jpg");
+        for (let i = 0; i < 10; i++)
+            this.entityManager.spawnNextbot("/jason.jpg");
 
         this.network.addEvent("nextbotUpdate", (pos) => {
             this.entityManager.updateNextbot(pos);
