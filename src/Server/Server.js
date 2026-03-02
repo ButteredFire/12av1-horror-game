@@ -2,11 +2,14 @@ import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 
+const inDevEnv = (process.env.NODE_ENV === "development");
+console.log(`Running in ${(inDevEnv) ? "DEVELOPMENT" : "PRODUCTION"} mode`);
+
 const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
     cors: {
-        origin: "*",
+        origin: (inDevEnv) ? "*" : "https://12av1-jason-backshot-simulator.vercel.app/",
         methods: ["GET", "POST"]
     }
 });

@@ -25,10 +25,9 @@ export class Engine {
     async init() {
         this.initGraphics();
 
-        const URL_PROD = "https://api.oriviet.org";
-        const URL_DEV = "http://localhost:3000";
+        const SERVER_URL = import.meta.env.SERVER_URL;
 
-        this.network = new NetworkManager(URL_PROD, this.scene, this.playerName);
+        this.network = new NetworkManager(SERVER_URL, this.scene, this.playerName);
         this.controls = new PlayerController(this.camera, this.renderer.domElement);
         this.entityManager = new EntityManager(this.scene);
 
@@ -57,7 +56,7 @@ export class Engine {
     /* Scene Initialization */
     initScene() {
         // Environment
-        this.scene.background = new THREE.Color(0x111111); // 0x111111 = Dark grey
+        this.scene.background = new THREE.Color(0x90d5ff); // 0x111111 = Dark grey
 
         const grid = new THREE.GridHelper(100, 100);
         const light = new THREE.DirectionalLight(0xffffff, 0.4);

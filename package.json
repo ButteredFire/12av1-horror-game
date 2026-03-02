@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "server": "node src/Server/Server.js"
+    "server": "export NODE_ENV=production&&node src/Server/Server.js",
+    "server-prod-win": "set NODE_ENV=production&&node src/Server/Server.js",
+    "server-dev-win": "set NODE_ENV=development&&node src/Server/Server.js"
   },
   "devDependencies": {
     "vite": "^7.3.1"
