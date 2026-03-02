@@ -12,6 +12,7 @@ export class NetworkManager {
 
 
     initSocket() {
+        const telemetryServer = document.getElementById("server-joined");
         const disconnectOverlay = document.getElementById("disconnect-overlay");
         const disconnectLog = document.getElementById("disconnect-log");
 
@@ -27,6 +28,8 @@ export class NetworkManager {
 
         this.socket.on("connect", () => {
             console.log("Successfully connected to the server.");
+
+            telemetryServer.innerHTML = this.urls[this.currentUrlIdx];
 
             requestAnimationFrame(() => {
                 disconnectOverlay.classList.remove("visible");
@@ -44,7 +47,7 @@ export class NetworkManager {
                 disconnectOverlay.style.display = "flex";
             });
 
-            
+
             if (reconnectionTries >= 2) {
                 disconnectLog.innerHTML = `Reconnection failed with error: ${err.message}. Switching to next available server...`;
 

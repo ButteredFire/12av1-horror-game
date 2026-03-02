@@ -41,6 +41,16 @@ html, body {
 }
 
 
+#telemetry {
+  font-family: monospace;
+  
+  position: absolute;
+  top: 5%;
+  left: 5%;
+}
+#telemetry h3 { margin: 5px; }
+
+
 #disconnect-overlay {
   display: flex;
   opacity: 0;
