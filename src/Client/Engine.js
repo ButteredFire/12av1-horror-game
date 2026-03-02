@@ -27,7 +27,7 @@ export class Engine {
 
         const SERVER_URL = import.meta.env.SERVER_URL;
 
-        this.network = new NetworkManager(SERVER_URL, this.scene, this.playerName);
+        this.network = new NetworkManager("https://api.oriviet.org", this.scene, this.playerName);
         this.controls = new PlayerController(this.camera, this.renderer.domElement);
         this.entityManager = new EntityManager(this.scene);
 
