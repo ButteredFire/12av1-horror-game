@@ -3,14 +3,19 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader";
 
 
 export class EntityManager {
-    constructor(scene) {
+    constructor(scene, listener) {
         this.scene = scene;
+        this.listener = listener;
+
         this.remotePlayers = new Map();
+        this.nextbots = new Map();
         this.coins = [];
-        this.nextbot = null;
     
-        this.loader = new GLTFLoader();
+        this.texLoader = new THREE.TextureLoader();
+        this.gltfLoader = new GLTFLoader();
         this.mannequinTemplate = null;
+
+        this.audioLoader = new THREE.AudioLoader();
     }
 
 
@@ -27,7 +32,7 @@ export class EntityManager {
     
     async loadAssets() {
         try {
-            const gltf = await this.loader.loadAsync("/mannequin.glb");
+            const gltf = await this.gltfLoader.loadAsync("/mannequin.glb");
             this.mannequinTemplate = gltf.scene;
             // Traverse to ensure shadows/materials are set if needed
             this.mannequinTemplate.traverse((child) => {
@@ -88,7 +93,7 @@ export class EntityManager {
         this.remotePlayers.set(id, {
             mesh: group,
             targetPos: new THREE.Vector3(data.x, 0, data.z),
-            targetRot: data.ry || 0
+            targetRot: -data.ry || 0
         });
     }
 
@@ -97,7 +102,7 @@ export class EntityManager {
         if (player) {
             player.targetPos.set(data.x, 0, data.z);
             if (data.ry !== undefined)
-                player.targetRot = data.ry;
+                player.targetRot = -data.ry;
         }
     }
 
@@ -110,21 +115,46 @@ export class EntityManager {
     }
 
 
-    spawnNextbot(texturePath) {
-        const loader = new THREE.TextureLoader();
-        const faceTex = loader.load(texturePath);
-        const mat = new THREE.SpriteMaterial({ map: faceTex });
-
-        this.nextbot = new THREE.Sprite(mat);
-        this.nextbot.scale.set(2, 2, 1);
-        this.nextbot.position.set(20, 1.5, 0);
-
-        this.scene.add(this.nextbot);
+    updateNextbots(nextbots) {
+        //if (this.nextbots[id]) this.nextbots[id].position.set(pos.x, 1.5, pos.z);
+        for (let id in nextbots) {
+            const botData = nextbots[id];
+            
+            // Create new Nextbot if it doesn't exist
+            if (!this.nextbots.has(id))
+                this.spawnNextbot(id, `/${botData.type}.png`);
+                
+            // Update Position (Lerp here for smoothness)
+            const bot = this.nextbots.get(id);
+            bot.sprite.position.lerp(new THREE.Vector3(botData.x, 3.5, botData.z), 0.2);
+        }
     }
 
+    spawnNextbot(id, texturePath) {
+        // Sprite
+        const map = this.texLoader.load(texturePath);
+        const material = new THREE.SpriteMaterial({ map: map });
+        const sprite = new THREE.Sprite(material);
+        
+        sprite.scale.set(5, 5, 1);
+        this.scene.add(sprite);
 
-    updateNextbot(pos) {
-        if (this.nextbot) this.nextbot.position.set(pos.x, 1.5, pos.z);
+        // Sound
+        const sound = new THREE.PositionalAudio(this.listener);
+        
+        this.audioLoader.load(`/thick-of-it.mp3`, (buffer) => {
+            sound.setBuffer(buffer);
+            sound.setRefDistance(2);   // Distance where volume starts dropping
+            sound.setMaxDistance(20);  // Distance where it becomes silent
+            sound.setLoop(true);
+            sound.setVolume(1.0);
+            sound.play();
+        });
+
+        sprite.add(sound);
+
+
+        this.nextbots.set(id, { sprite, sound });
     }
 
 

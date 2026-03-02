@@ -25,16 +25,16 @@ export class Engine {
     async init() {
         this.initGraphics();
 
-        const SERVER_URL = import.meta.env.SERVER_URL;
-
-        this.network = new NetworkManager("https://api.oriviet.org", this.scene, this.playerName);
+        this.network = new NetworkManager("http://localhost:3000", this.scene, this.playerName);
         this.controls = new PlayerController(this.camera, this.renderer.domElement);
-        this.entityManager = new EntityManager(this.scene);
+        this.entityManager = new EntityManager(this.scene, this.listener);
 
         this.initScene();
         this.initNetworking();
         
         this.loop = this.loop.bind(this);   // NOTE: This binds the loop so `this` remains the Engine instance
+
+        this.posTelemetry = document.getElementById("player-pos");
     
         await this.entityManager.loadAssets();  // Wait for all assets to load 
     }
@@ -50,13 +50,17 @@ export class Engine {
         const FOV = 75, NEAR_CLIP = 0.1, FAR_CLIP = 10000;
         this.camera = new THREE.PerspectiveCamera(FOV, window.innerWidth / window.innerHeight, NEAR_CLIP, FAR_CLIP);
         this.camera.position.y = 2.5;
+
+        // Audio
+        this.listener = new THREE.AudioListener();
+        this.camera.add(this.listener);
     }
 
 
     /* Scene Initialization */
     initScene() {
         // Environment
-        this.scene.background = new THREE.Color(0x90d5ff); // 0x111111 = Dark grey
+        this.scene.background = new THREE.Color(0x111111); // 0x111111 = Dark grey
 
         const grid = new THREE.GridHelper(100, 100);
         const light = new THREE.DirectionalLight(0xffffff, 0.4);
@@ -75,19 +79,17 @@ export class Engine {
         // Entities
         this.entityManager.spawnCoins(15);
         
-        for (let i = 0; i < 10; i++)
-            this.entityManager.spawnNextbot("/jason.jpg");
-
-        this.network.addEvent("nextbotUpdate", (pos) => {
-            this.entityManager.updateNextbot(pos);
+        this.network.addEvent("nextbotsUpdate", (nextbots) => {
+            this.entityManager.updateNextbots(nextbots);
         });
-        
     }
 
 
     initNetworking() {
         this.network.addEvent("init", (data) => {
-            // On player join, spawn everyone else who is already there
+            // Retrieve world information on player join
+
+                // Render other players
             for (const id in data.players) {
                 if (id !== this.network.id) {
                     this.entityManager.addRemotePlayer(id, data.players[id]);
@@ -145,6 +147,9 @@ export class Engine {
         this.entityManager.update(dt);
         
         this.flashlight.position.copy(this.camera.position);
+        this.flashlight.rotation.copy(this.camera.rotation);
+
+        this.posTelemetry.innerHTML = `(${Math.round(this.camera.position.x)}, ${Math.round(this.camera.position.y)}, ${Math.round(this.camera.position.z)})`;
 
         // Nextbot-Player collision check
         const result = this.entityManager.checkCollisions(this.camera.position);
