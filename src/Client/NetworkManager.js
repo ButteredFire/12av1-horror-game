@@ -6,8 +6,9 @@ export class NetworkManager {
         this.scene = scene;
         this.playerName = playerName;
 
+        this.playerID = null;
+
         this.currentUrlIdx = 0;
-        this.initSocket();
     }
 
 
@@ -27,7 +28,9 @@ export class NetworkManager {
 
 
         this.socket.on("connect", () => {
-            console.log("Successfully connected to the server.");
+            this.playerID = this.socket.id;
+
+            console.log(`Connected to server as player "${this.playerName}" (${this.playerID})`);
 
             telemetryServer.innerHTML = this.urls[this.currentUrlIdx];
 
@@ -74,12 +77,14 @@ export class NetworkManager {
     }
 
 
-    sync(camPosition, camRotation) {
+    sync(camPosition, camDirection) {
+        let yaw = Math.atan2(camDirection.x, camDirection.z);
+
         this.socket.emit("move", {
             x: camPosition.x,
             y: camPosition.y,
             z: camPosition.z,
-            ry: camRotation.y // Y-axis rotation (yaw) for the player model to face the right way
+            ry: yaw
         });
     }
 

@@ -5,6 +5,9 @@ import { Server } from 'socket.io';
 const inDevEnv = (process.env.NODE_ENV === "development");
 console.log(`Running in ${(inDevEnv) ? "DEVELOPMENT" : "PRODUCTION"} mode`);
 
+const port = 3000;
+const host = "localhost";
+
 const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
@@ -15,14 +18,16 @@ const io = new Server(httpServer, {
 });
 
 let players = {};
+let playerCount = 0;
 
 
 let nextbots = {};
-const NEXTBOT_SPEED = 0.25;
+const NEXTBOT_SPEED = 0.15;
+const NEXTBOT_KILL_DISTANCE = 1.5;
 
 
-const nextbotCount = 10;
-const botTypes = ["jason", "jerma", "obunga"];
+const nextbotCount = 3;
+const botTypes = ["jason"];
 function randRange(min, max) { return Math.random() * (max - min) + min; }
 function randRangeInt(min, max) { return Math.round(Math.random()) * (max - min) + min; }
 for (let i = 0; i < nextbotCount; i++) {
@@ -40,20 +45,24 @@ console.log(nextbots);
 io.on("connection", (socket) => {
     console.log("NEW CONNECTION RECEIVED");
 
-    const playerName = socket.handshake.query.playerName || "Ragamuffin";
-    players[socket.id] = { playerName: playerName, x: 0, y: 0, z: 0, ry: 0 };
+    const playerName = socket.handshake.query.playerName || `Ragamuffin #${playerCount + 1}`;
 
-    console.log(players);
+    players[socket.id] = { playerName: playerName, x: 0, y: 0, z: 0, ry: 0 };
+    playerCount++;
 
     // Send the current world state to the new player
     socket.emit("init", {
+        playerName: playerName,     // Also pass in player name in case the client sends and keeps an empty name
         id: socket.id,
         players: players,
         nextbots: nextbots
     });
 
     // Inform others
-    socket.broadcast.emit("newPlayer", { id: socket.id, playerData: players[socket.id] });
+    socket.broadcast.emit("newPlayer", {
+        id: socket.id,
+        playerData: players[socket.id]
+    });
 
     socket.on("move", (data) => {
         if (players[socket.id]) {
@@ -61,12 +70,17 @@ io.on("connection", (socket) => {
             players[socket.id].y = data.y;
             players[socket.id].z = data.z;
             players[socket.id].ry = data.ry;
-            socket.broadcast.emit("playerMoved", { id: socket.id, playerData: players[socket.id] });
+            socket.broadcast.emit("playerMoved", {
+                id: socket.id,
+                playerData: players[socket.id]
+            });
         }
     });
 
     socket.on("disconnect", () => {
         delete players[socket.id];
+        playerCount--;
+
         io.emit("playerDisconnected", socket.id);
     });
 });
@@ -110,24 +124,26 @@ setInterval(() => {
     const playerIds = Object.keys(players);
     if (playerIds.length === 0) return;
 
-    // For each Nextbot, target the closest player
+    // For each Nextbot,
     for (let id in nextbots) {
         let bot = nextbots[id];
 
-        let closest = null;
+        // TARGET CLOSEST PLAYER
+        let closestPlayer = null, closestPlayerID = null;
         let minDist = Infinity;
         playerIds.forEach(id => {
             const p = players[id];
             const dist = Math.hypot(p.x - bot.x, p.z - bot.z);
             if (dist < minDist) {
                 minDist = dist;
-                closest = p;
+                closestPlayer = p;
+                closestPlayerID = id;
             }
         });
 
-        if (closest) {
-            const dx = closest.x - bot.x;
-            const dz = closest.z - bot.z;
+        if (closestPlayer) {
+            const dx = closestPlayer.x - bot.x;
+            const dz = closestPlayer.z - bot.z;
             const angle = Math.atan2(dx, dz);
 
             let dist = Math.sqrt(dx * dx + dz * dz);
@@ -138,6 +154,13 @@ setInterval(() => {
             
             // Prevent Nextbot clipping
             applySeparation(bot, nextbots);
+
+
+            // KILL PLAYER IF WITHIN KILL DISTANCE
+            if (dist < NEXTBOT_KILL_DISTANCE) {
+                // NOTE: io.to(playerID) emits an event only to the player of that ID
+                io.to(closestPlayerID).emit("jumpscare", { type: bot.type });
+            }
         }
     }
 
@@ -145,4 +168,4 @@ setInterval(() => {
 
 }, 1000 / FREQUENCY);
 
-httpServer.listen(3000, () => console.log("Server on port 3000"));
+httpServer.listen(port, host, () => console.log(`Server is running on http://${host}:${port}`));

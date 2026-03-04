@@ -1,9 +1,9 @@
 import * as THREE from "three";
-import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader";
+import { CONSTS } from "./Constants";
 
 
 export class EntityManager {
-    constructor(scene, listener) {
+    constructor(scene, listener, texLoader, gltfLoader, audioLoader) {
         this.scene = scene;
         this.listener = listener;
 
@@ -11,22 +11,31 @@ export class EntityManager {
         this.nextbots = new Map();
         this.coins = [];
     
-        this.texLoader = new THREE.TextureLoader();
-        this.gltfLoader = new GLTFLoader();
-        this.mannequinTemplate = null;
+        this.texLoader = texLoader;
+        this.gltfLoader = gltfLoader;
+        this.audioLoader = audioLoader;
 
-        this.audioLoader = new THREE.AudioLoader();
+        this.mannequinTemplate = null;
+        this.mannequin = null;
     }
 
 
     update(dt) {
         // Linear interpolation on player positions
-        const lerpFactor = 0.15; 
         this.remotePlayers.forEach((player) => {
-            player.mesh.position.lerp(player.targetPos, lerpFactor);
+            player.mesh.position.lerp(player.targetPos, CONSTS.LERP_FACTOR);
             
-            player.mesh.rotation.y += (player.targetRot - player.mesh.rotation.y) * lerpFactor;
+            player.mesh.rotation.y += (player.targetRot - player.mesh.rotation.y) * CONSTS.LERP_FACTOR;
         });
+    }
+
+
+    reset() {
+        for (const [id, _] of this.remotePlayers)
+            this.removeRemotePlayer(id);
+
+        this.remotePlayers.clear();
+        this.remotePlayers = new Map();
     }
     
     
@@ -39,6 +48,7 @@ export class EntityManager {
                 if (child.isMesh) {
                     child.castShadow = true;
                     child.receiveShadow = true;
+                    this.mannequin = child;
                 }
             });
             console.log("Mannequin model loaded.");
@@ -51,15 +61,22 @@ export class EntityManager {
     createNameplate(name) {
         const canvas = document.createElement("canvas");
         const ctx = canvas.getContext("2d");
-        canvas.width = 256;
-        canvas.height = 64;
+
+        const fontSize = 32;
+        ctx.font = `bold ${fontSize}px Arial`;
+
+        const textMetrics = ctx.measureText(name);
+        const textWidth = textMetrics.width;
+        const padding = 20;
+
+        canvas.width = textWidth + padding;
+        canvas.height = fontSize + padding;
+
+        ctx.font = `bold ${fontSize}px Arial`;  // NOTE: Re-setting canvas dimensions clears the context for some reason
     
-        // Background
         ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
     
-        // Text Style
-        ctx.font = "bold 32px Arial";
         ctx.fillStyle = "white";
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
@@ -69,40 +86,59 @@ export class EntityManager {
         const spriteMat = new THREE.SpriteMaterial({ map: texture });
         const sprite = new THREE.Sprite(spriteMat);
         
-        // Position nameplate above the player model
-        sprite.scale.set(2, 0.5, 1);
-        sprite.position.y = 3; 
+        // Convert pixels to 3D world units
+        const worldScale = 0.01; 
+        sprite.scale.set(
+            canvas.width * worldScale, 
+            canvas.height * worldScale, 
+            1
+        );
+
+        sprite.position.y = CONSTS.PLAYER_HEIGHT + 0.75; 
         
         return sprite;
     }
 
 
     addRemotePlayer(id, data) {
-        if (!this.mannequinTemplate) return;
+        if (!this.mannequinTemplate) {
+            console.error("PROGRAMMER ERROR: Mannequin asset has not finished loading yet!");
+            return;
+        }
 
-        const group = new THREE.Group(); // Model + nameplate group
+        const group = new THREE.Group();
         const model = this.mannequinTemplate.clone();
-        const nameplate = this.createNameplate(data.playerName || "Ragamuffin");
+        const nameplate = this.createNameplate(data.playerName);
 
         group.add(model);
         group.add(nameplate);
-        group.position.set(data.x, 0, data.z);
+        group.position.set(data.x, data.y - CONSTS.PLAYER_HEIGHT, data.z);
 
         this.scene.add(group);
         
         this.remotePlayers.set(id, {
             mesh: group,
             targetPos: new THREE.Vector3(data.x, 0, data.z),
-            targetRot: -data.ry || 0
+            //targetPos: group.position,
+            //targetRot: data.ry || 0
+            targetRot: data.ry
         });
     }
 
     updateRemotePlayer(id, data) {
         const player = this.remotePlayers.get(id);
         if (player) {
-            player.targetPos.set(data.x, 0, data.z);
-            if (data.ry !== undefined)
-                player.targetRot = -data.ry;
+            player.targetPos.set(data.x, data.y - CONSTS.PLAYER_HEIGHT, data.z);
+            
+
+            // Prevent player mesh spinning full-circle due to Math.atan2 resetting from PI to -PI or vice versa
+            let delta = data.ry - player.targetRot;
+                // Normalize the delta to stay within [-PI, PI]
+            if (delta > Math.PI) delta -= Math.PI * 2;
+            if (delta < -Math.PI) delta += Math.PI * 2;
+
+            const turnSpeed = 0.1; // Adjust for "snappiness"
+            player.targetRot += delta * turnSpeed;
         }
     }
 
@@ -122,11 +158,11 @@ export class EntityManager {
             
             // Create new Nextbot if it doesn't exist
             if (!this.nextbots.has(id))
-                this.spawnNextbot(id, `/${botData.type}.png`);
+                this.spawnNextbot(id, `/nextbots/${botData.type}.png`);
                 
             // Update Position (Lerp here for smoothness)
             const bot = this.nextbots.get(id);
-            bot.sprite.position.lerp(new THREE.Vector3(botData.x, 3.5, botData.z), 0.2);
+            bot.sprite.position.lerp(new THREE.Vector3(botData.x, 3.5, botData.z), CONSTS.LERP_FACTOR);
         }
     }
 
@@ -142,10 +178,10 @@ export class EntityManager {
         // Sound
         const sound = new THREE.PositionalAudio(this.listener);
         
-        this.audioLoader.load(`/thick-of-it.mp3`, (buffer) => {
+        this.audioLoader.load("/sfx/armed-and-dangerous.mp3", (buffer) => {
             sound.setBuffer(buffer);
-            sound.setRefDistance(10);   // Distance where volume starts dropping
-            sound.setMaxDistance(50);  // Distance where it becomes silent
+            sound.setRefDistance(5);   // Distance where volume starts dropping
+            sound.setMaxDistance(15);  // Distance where it becomes silent
             sound.setLoop(true);
             sound.setVolume(1.0);
             sound.play();

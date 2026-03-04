@@ -17,7 +17,10 @@ export class PlayerController {
             if (this.isMobile && this.joystick) {
                 // Destroy and recreate joystick to snap to new 'bottom/left' CSS coordinates
                 this.joystick.destroy();
-                this.initMobile(); 
+                this.initMobile();
+
+                const root = document.getElementById("root");
+                void root.offsetWidth;
             }
         });
 
@@ -112,7 +115,7 @@ export class PlayerController {
 
 
     update(dt) {
-        const speed = 0.15;
+        const speedDT = 0.15;
 
         if (this.isMobile) {
             // Mobile Movement
@@ -129,15 +132,15 @@ export class PlayerController {
             right.crossVectors(this.camera.up, forward).negate();
 
             // 4. Apply movement
-            this.camera.position.addScaledVector(forward, this.moveState.forward * speed);
-            this.camera.position.addScaledVector(right, this.moveState.right * speed);
+            this.camera.position.addScaledVector(forward, this.moveState.forward * speedDT);
+            this.camera.position.addScaledVector(right, this.moveState.right * speedDT);
         }
         else if (this.controls.isLocked) {
             // Desktop Movement
-            if (this.keys["KeyW"]) this.controls.moveForward(speed);
-            if (this.keys["KeyS"]) this.controls.moveForward(-speed);
-            if (this.keys["KeyA"]) this.controls.moveRight(-speed);
-            if (this.keys["KeyD"]) this.controls.moveRight(speed);
+            if (this.keys["KeyW"]) this.controls.moveForward(speedDT);
+            if (this.keys["KeyS"]) this.controls.moveForward(-speedDT);
+            if (this.keys["KeyA"]) this.controls.moveRight(-speedDT);
+            if (this.keys["KeyD"]) this.controls.moveRight(speedDT);
         }
     }
 }
