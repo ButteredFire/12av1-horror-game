@@ -1,14 +1,45 @@
 import * as THREE from "three";
+import { CONSTS } from "../Constants";
+import RAPIER from "@dimforge/rapier3d-compat";
 import { PointerLockControls } from "three/examples/jsm/controls/PointerLockControls";
 import nipplejs from "nipplejs";
 
 
 export class PlayerController {
-    constructor(camera, domElement) {
+    constructor(world, camera, domElement) {
+        this.world = world;
         this.camera = camera;
         this.domElement = domElement;
         this.controls = new PointerLockControls(this.camera, document.body);
+
+        this.initPlayer();
+        this.initControls();
+    }
+
+
+    initPlayer() {
+        // 1. Create a Capsule Body (0.6m wide, 1.8m tall)
+        let bodyDesc = RAPIER.RigidBodyDesc.kinematicPositionBased();
+        this.body = this.world.createRigidBody(bodyDesc);
         
+        const colliderDesc = RAPIER.ColliderDesc.capsule(CONSTS.PLAYER_HEIGHT / 2.0, CONSTS.PLAYER_COLLISION_RADIUS);
+        colliderDesc.setFriction(0);     // Set friction to 0 so the player "slides" over geometry instead of catching on it
+        colliderDesc.setRestitution(0);  // Set restitution (bounciness) to 0 to prevent "jitter-bounce"
+
+        this.collider = this.world.createCollider(colliderDesc, this.body);
+
+        // 2. Create the Controller for Stairs/Autostep
+        this.controller = this.world.createCharacterController(0.15);
+        this.controller.enableAutostep(0.5, 0.01, true); // (maxStepHeight, minWidth)
+        this.controller.enableSnapToGround(0.3);
+
+
+        const spawnPos = { x: 0, y: CONSTS.PLAYER_HEIGHT, z: 0 }; // Start 5 meters in the air to avoid stuck-in-floor
+        this.body.setTranslation(spawnPos, true);
+    }
+
+
+    initControls() {
         this.moveState = { forward: 0, right: 0 };
         this.lookSensitivity = 0.005;
         this.isMobile = "ontouchstart" in window;
@@ -30,6 +61,7 @@ export class PlayerController {
         }
     }
 
+
     initDesktop() {
         const instructions = document.getElementById("instructions");
         document.addEventListener("click", () => {
@@ -49,7 +81,7 @@ export class PlayerController {
         const joystickZone = document.getElementById("joystick-zone");
         const joystick = nipplejs.create({
             zone: joystickZone,
-            mode: "static",
+            mode: "dynamic",
             position: { left: "80px", bottom: "80px" },
             color: "white"
         });
@@ -115,7 +147,55 @@ export class PlayerController {
 
 
     update(dt) {
-        const speedDT = 0.15;
+        const speedDT = CONSTS.PLAYER_SPEED * dt;
+        const movement = new THREE.Vector3(0, 0, 0);
+
+        // Calculate desired movement direction (your existing logic)
+        const forward = new THREE.Vector3();
+        this.camera.getWorldDirection(forward);
+        forward.y = 0;
+        forward.normalize();
+        const right = new THREE.Vector3().crossVectors(this.camera.up, forward).negate();
+
+        // Sum up the intended move
+        if (this.isMobile) {
+            movement.addScaledVector(forward, this.moveState.forward * speedDT);
+            movement.addScaledVector(right, this.moveState.right * speedDT);
+        } else if (this.controls.isLocked) {
+            if (this.keys["KeyW"]) movement.addScaledVector(forward, speedDT);
+            if (this.keys["KeyS"]) movement.addScaledVector(forward, -speedDT);
+            if (this.keys["KeyA"]) movement.addScaledVector(right, -speedDT);
+            if (this.keys["KeyD"]) movement.addScaledVector(right, speedDT);
+        }
+
+        // Check if we are on the ground before applying more gravity
+        //if (this.controller.computedGround()) {
+        //    movement.y = 0;
+        //} else {
+            movement.y = -CONSTS.ACCELERATION_PER_FRAME;
+        //}
+
+
+        // 4. ASK RAPIER TO CALCULATE THE MOVE
+        this.controller.computeColliderMovement(this.collider, movement);
+        const correctedMove = this.controller.computedMovement();
+
+        // 5. Apply the movement to the body and sync camera
+        const currentPos = this.body.translation();
+        this.body.setNextKinematicTranslation({
+            x: currentPos.x + correctedMove.x,
+            y: currentPos.y + correctedMove.y,
+            z: currentPos.z + correctedMove.z
+        });
+
+        this.camera.position.copy(this.body.translation());
+        this.camera.position.y += 1.0; // Offset camera to eye-level
+    }
+
+
+    /*
+    update(dt) {
+        const speedDT = CONSTS.PLAYER_SPEED * dt;
 
         if (this.isMobile) {
             // Mobile Movement
@@ -143,4 +223,5 @@ export class PlayerController {
             if (this.keys["KeyD"]) this.controls.moveRight(speedDT);
         }
     }
+    */
 }

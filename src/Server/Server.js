@@ -1,4 +1,5 @@
 import express from 'express';
+import { CONSTS } from "../Constants.js";
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 
@@ -20,21 +21,25 @@ const io = new Server(httpServer, {
 let players = {};
 let playerCount = 0;
 
-
 let nextbots = {};
-const NEXTBOT_SPEED = 0.15;
-const NEXTBOT_KILL_DISTANCE = 1.5;
 
-
-const nextbotCount = 3;
-const botTypes = ["jason"];
+//const nextbotCount = 0;
+const botTypes = ["jason", "louis", "dyfuku", "an", "viet", "minh", "khoa", "ductrinh", "jerry"];
 function randRange(min, max) { return Math.random() * (max - min) + min; }
 function randRangeInt(min, max) { return Math.round(Math.random()) * (max - min) + min; }
-for (let i = 0; i < nextbotCount; i++) {
-    nextbots[`bot${i}`] = {
-        x: randRange(-20, 20),
-        z: randRange(-20, 20),
-        type: botTypes[randRangeInt(0, botTypes.length - 1)]
+for (let bot of botTypes) {
+    let sound = "armed-and-dangerous";
+
+    if (bot == "minh")      sound = "thick-of-it";
+    if (bot == "louis")     sound = "man-united";
+
+    nextbots[`${bot}`] = {
+        x: randRange(-200, 200),
+        y: CONSTS.NEXTBOT_HEIGHT,
+        z: randRange(-200, 200),
+        //type: botTypes[randRangeInt(0, botTypes.length - 1)]
+        type: bot,
+        sound: sound
     };
 }
 
@@ -88,9 +93,10 @@ io.on("connection", (socket) => {
 
 
 const BOT_RADIUS = 5.0; // Distance to keep between bots
+const BOT_RADIUS_SQ = BOT_RADIUS * BOT_RADIUS;
 const SEPARATION_WEIGHT = 0.1; // How strongly they push away
 
-function applySeparation(currentBot, allBots) {
+function applySeparation(dt, currentBot, allBots) {
     let pushX = 0;
     let pushZ = 0;
 
@@ -103,7 +109,7 @@ function applySeparation(currentBot, allBots) {
         let distSq = dx * dx + dz * dz;
 
         // If they are closer than the combined radius
-        if (distSq < (BOT_RADIUS * BOT_RADIUS) && distSq > 0) {
+        if (distSq < BOT_RADIUS_SQ && distSq > 0) {
             let dist = Math.sqrt(distSq);
             // Inversely proportional push: closer = stronger push
             pushX += (dx / dist) * SEPARATION_WEIGHT;
@@ -111,8 +117,8 @@ function applySeparation(currentBot, allBots) {
         }
     }
     
-    currentBot.x += pushX;
-    currentBot.z += pushZ;
+    currentBot.x += pushX * dt;
+    currentBot.z += pushZ * dt;
 }
 
 
@@ -120,7 +126,20 @@ function applySeparation(currentBot, allBots) {
 
 // AI Logic Loop (60Hz)
 const FREQUENCY = 60;
+const STOP_DIST_SQ = 0.5 * 0.5;
+const KILL_DIST_SQ = CONSTS.NEXTBOT_KILL_DISTANCE * CONSTS.NEXTBOT_KILL_DISTANCE;
+let lastTime = Date.now();
+
 setInterval(() => {
+    // Compute delta-time
+    const now = Date.now();
+    const dt = Math.min((now - lastTime) / 1000, 0.1); // Max dt of 100ms
+    lastTime = now;
+
+    // Skip update if dt is (somehow) 0 to avoid NaN errors
+    if (dt <= 0) return;
+
+
     const playerIds = Object.keys(players);
     if (playerIds.length === 0) return;
 
@@ -130,34 +149,39 @@ setInterval(() => {
 
         // TARGET CLOSEST PLAYER
         let closestPlayer = null, closestPlayerID = null;
-        let minDist = Infinity;
+        let minDistSq = Infinity;
+
         playerIds.forEach(id => {
             const p = players[id];
-            const dist = Math.hypot(p.x - bot.x, p.z - bot.z);
-            if (dist < minDist) {
-                minDist = dist;
+            const dx = p.x - bot.x;
+            const dz = p.z - bot.z;
+            const dSq = dx * dx + dz * dz;
+
+            if (dSq < minDistSq) {
+                minDistSq = dSq;
                 closestPlayer = p;
                 closestPlayerID = id;
             }
         });
 
+
         if (closestPlayer) {
             const dx = closestPlayer.x - bot.x;
+            const dy = closestPlayer.y - bot.y;
             const dz = closestPlayer.z - bot.z;
-            const angle = Math.atan2(dx, dz);
 
-            let dist = Math.sqrt(dx * dx + dz * dz);
-            if (dist > 0.5) { // Stop a bit before "touching" to let jumpscare trigger
-                bot.x += Math.sin(angle) * NEXTBOT_SPEED;
-                bot.z += Math.cos(angle) * NEXTBOT_SPEED;
+            if (minDistSq > STOP_DIST_SQ) { // Stop a bit before "touching" to let jumpscare trigger
+                const angle = Math.atan2(dx, dz);
+                bot.x += Math.sin(angle) * (CONSTS.NEXTBOT_SPEED * dt);
+                bot.z += Math.cos(angle) * (CONSTS.NEXTBOT_SPEED * dt);
             }
             
             // Prevent Nextbot clipping
-            applySeparation(bot, nextbots);
+            applySeparation(dt, bot, nextbots);
 
 
             // KILL PLAYER IF WITHIN KILL DISTANCE
-            if (dist < NEXTBOT_KILL_DISTANCE) {
+            if (minDistSq < KILL_DIST_SQ && dy < CONSTS.NEXTBOT_KILL_DISTANCE) {
                 // NOTE: io.to(playerID) emits an event only to the player of that ID
                 io.to(closestPlayerID).emit("jumpscare", { type: bot.type });
             }

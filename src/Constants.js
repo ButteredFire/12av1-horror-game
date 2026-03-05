@@ -1,0 +1,18 @@
+import * as THREE from "three";
+
+export const CONSTS = {
+    PLAYER_HEIGHT: 2.5,
+    PLAYER_SPEED: 15.5,
+    PLAYER_COLLISION_RADIUS: 0.075,
+
+    NEXTBOT_HEIGHT: 3.5,
+    NEXTBOT_SPEED: 9.35,
+    NEXTBOT_KILL_DISTANCE: 1.5,
+
+    WORLD_UP_VEC: new THREE.Vector3(0, 1, 0),
+    WORLD_FLOOR_HEIGHT: 0.0,
+    
+    LERP_FACTOR: 0.15,
+    TARGET_FPS: 60,
+    ACCELERATION_PER_FRAME: 0.15,
+};

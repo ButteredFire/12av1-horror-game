@@ -1,62 +1,75 @@
 import * as THREE from "three";
-import { StaticGeometryGenerator, computeBoundsTree, disposeBoundsTree, acceleratedRaycast, SAH } from 'three-mesh-bvh';
-
-// Add extension functions to the prototypes
-THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
-THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
-THREE.Mesh.prototype.raycast = acceleratedRaycast;
+import RAPIER from "@dimforge/rapier3d-compat";
 
 
 export class MapManager {
-    constructor(scene, gltfLoader) {
+    constructor(world, scene, gltfLoader) {
+        this.world = world;
         this.scene = scene;
         this.gltfLoader = gltfLoader;
-
-        this.colliders = [];
-        this.colliderMesh = null;
     }
 
 
-    async loadZone(url) {
+    async load(url) {
         const gltf = await this.gltfLoader.loadAsync(url);
-        const scene = gltf.scene;
-
+        const mesh = gltf.scene;
     
-        scene.traverse((child) => {
+        mesh.traverse((child) => {
+            console.log(child.name);
             if (child.isMesh) {
-                //child.visible = false;
-                this.colliders.push(child); 
+                child.receiveShadow = true;
+                child.castShadow = true;
+                child.material.side = THREE.DoubleSide;
 
-                if (child.name.startsWith("LIGHT")) {
-                    const light = new THREE.SpotLight(0xffffff, 10, 20, Math.PI / 3, 0.5, 1);
-                    light.castShadow = true;
-                    light.position = child.position;
-                    light.rotation = child.rotation;
-
-                    console.log(light);
-
-                    this.scene.add(light);
+                if (child.name.startsWith("UCX")) {
+                    child.visible = false;
                 }
+
+                const vertices = child.geometry.attributes.position.array;
+                const indices = child.geometry.index.array;
+
+                const colliderDesc = RAPIER.ColliderDesc.trimesh(vertices, indices);
+                this.world.createCollider(colliderDesc);
+            }
+
+            else if (child.name.startsWith("LIGHT")) {
+                console.log("LIGHT");
+                const light = new THREE.SpotLight(0xffffff, 10, 20, Math.PI / 3, 0.5, 1);
+                light.castShadow = true;
+                light.position.copy(child.position);
+                light.rotation.copy(child.rotation);
+
+                this.scene.add(light);
             }
         });
+
     
-        this.scene.add(scene);
+        this.scene.add(mesh);
     }
 
 
-    toggleDebugColliders() {
-        this.colliders.forEach(mesh => {
-            console.log(mesh);
-            // Toggle visibility
-            mesh.visible = !mesh.visible;
-            
-            // Make them wireframe and bright red so they stand out
-            if (mesh.material) {
-                mesh.material.wireframe = true;
-                mesh.material.color.set(0xff0000);
-                mesh.material.opacity = 1.0;
-                mesh.material.transparent = true;
-            }
-        });
+    toggleDebugColliders(collidersVisible, lightingAffectsWireframe) {
+        const wireColor = 0xff0000;
+        let wireMat = null;
+
+        if (lightingAffectsWireframe)
+            wireMat = new THREE.MeshStandardMaterial({
+                color: wireColor,
+                wireframe: true
+            });
+        else
+            wireMat = new THREE.MeshBasicMaterial({
+                color: wireColor,
+                wireframe: true
+            });
+
+
+        //this.colliders.forEach(mesh => {
+        //    mesh.visible = collidersVisible;
+        //    mesh.receiveShadow = lightingAffectsWireframe;
+        //    
+        //    if (mesh.material)
+        //        mesh.material = wireMat;
+        //});
     }
 }

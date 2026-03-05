@@ -1,9 +1,11 @@
 import * as THREE from "three";
-import { CONSTS } from "./Constants";
+import { CONSTS } from "../Constants";
+import RAPIER from "@dimforge/rapier3d-compat";
 
 
 export class EntityManager {
-    constructor(scene, listener, texLoader, gltfLoader, audioLoader) {
+    constructor(world, scene, listener, texLoader, gltfLoader, audioLoader) {
+        this.world = world;
         this.scene = scene;
         this.listener = listener;
 
@@ -21,12 +23,35 @@ export class EntityManager {
 
 
     update(dt) {
-        // Linear interpolation on player positions
+        // Calculate a frame-rate independent alpha
+        // Higher dt = larger alpha (to catch up)
+        const alpha = 1 - Math.pow(1 - CONSTS.LERP_FACTOR, dt * CONSTS.TARGET_FPS);
+
+        // UPDATE PLAYERS
         this.remotePlayers.forEach((player) => {
-            player.mesh.position.lerp(player.targetPos, CONSTS.LERP_FACTOR);
+            // Position Lerp
+            player.mesh.position.lerp(player.targetPos, alpha);
             
-            player.mesh.rotation.y += (player.targetRot - player.mesh.rotation.y) * CONSTS.LERP_FACTOR;
+            // Rotation Lerp (Using lerp logic for the Y axis)
+            const rotDiff = player.targetRot - player.mesh.rotation.y;
+            player.mesh.rotation.y += rotDiff * alpha;
+
+
+            // Flashlight
+            const lightPos = new THREE.Vector3(player.mesh.position.x, player.mesh.position.y, player.mesh.position.z);
+            player.flashlight.position.copy(lightPos);
+            player.flashlight.position.y += CONSTS.PLAYER_HEIGHT;
+
+            const vector = new THREE.Vector3(0, 0, 1);
+            vector.applyQuaternion(player.mesh.quaternion);
+            player.flashlight.target.position.copy(lightPos).add(vector);
         });
+
+
+        // UPDATE NEXTBOTS
+        //this.nextbots.forEach((bot) => {
+        //    bot.sprite.position.lerp(bot.targetPos, alpha);
+        //});
     }
 
 
@@ -34,8 +59,14 @@ export class EntityManager {
         for (const [id, _] of this.remotePlayers)
             this.removeRemotePlayer(id);
 
+        for (const [id, _] of this.nextbots)
+            this.removeNextbot(id);
+
         this.remotePlayers.clear();
         this.remotePlayers = new Map();
+        
+        this.nextbots.clear();
+        this.nextbots = new Map();
     }
     
     
@@ -51,6 +82,7 @@ export class EntityManager {
                     this.mannequin = child;
                 }
             });
+
             console.log("Mannequin model loaded.");
         } catch (error) {
             console.error("Error loading model:", error);
@@ -109,20 +141,33 @@ export class EntityManager {
         const group = new THREE.Group();
         const model = this.mannequinTemplate.clone();
         const nameplate = this.createNameplate(data.playerName);
+        const flashlight = new THREE.SpotLight(0xffffff, 10, 30, Math.PI / 4, 0.5, 1);
+
+        flashlight.castShadow = true;
+        flashlight.shadow.mapSize.width = 512;
+        flashlight.shadow.mapSize.height = 512;
+        flashlight.shadow.camera.near = 0.5;
+        flashlight.shadow.camera.far = 25;
+
 
         group.add(model);
         group.add(nameplate);
         group.position.set(data.x, data.y - CONSTS.PLAYER_HEIGHT, data.z);
 
         this.scene.add(group);
+        this.scene.add(flashlight);
+        this.scene.add(flashlight.target);
         
         this.remotePlayers.set(id, {
             mesh: group,
+            flashlight: flashlight,
             targetPos: new THREE.Vector3(data.x, 0, data.z),
             //targetPos: group.position,
             //targetRot: data.ry || 0
             targetRot: data.ry
         });
+
+        this.updateRemotePlayer(id, data);
     }
 
     updateRemotePlayer(id, data) {
@@ -151,24 +196,23 @@ export class EntityManager {
     }
 
 
-    updateNextbots(nextbots) {
-        //if (this.nextbots[id]) this.nextbots[id].position.set(pos.x, 1.5, pos.z);
-        for (let id in nextbots) {
-            const botData = nextbots[id];
+    updateNextbots(nextbotsData) {
+        for (let id in nextbotsData) {
+            const data = nextbotsData[id];
             
-            // Create new Nextbot if it doesn't exist
-            if (!this.nextbots.has(id))
-                this.spawnNextbot(id, `/nextbots/${botData.type}.png`);
-                
-            // Update Position (Lerp here for smoothness)
+            if (!this.nextbots.has(id)) {
+                this.spawnNextbot(id, data);
+            }
+            
             const bot = this.nextbots.get(id);
-            bot.sprite.position.lerp(new THREE.Vector3(botData.x, 3.5, botData.z), CONSTS.LERP_FACTOR);
+            //bot.targetPos.set(data.x, data.y, data.z);
+            bot.sprite.position.lerp(new THREE.Vector3(data.x, data.y, data.z), CONSTS.LERP_FACTOR);
         }
     }
 
-    spawnNextbot(id, texturePath) {
+    spawnNextbot(id, nextbot) {
         // Sprite
-        const map = this.texLoader.load(texturePath);
+        const map = this.texLoader.load(`/nextbots/${nextbot.type}.png`);
         const material = new THREE.SpriteMaterial({ map: map });
         const sprite = new THREE.Sprite(material);
         
@@ -178,7 +222,7 @@ export class EntityManager {
         // Sound
         const sound = new THREE.PositionalAudio(this.listener);
         
-        this.audioLoader.load("/sfx/armed-and-dangerous.mp3", (buffer) => {
+        this.audioLoader.load(`/sfx/${nextbot.sound}.mp3`, (buffer) => {
             sound.setBuffer(buffer);
             sound.setRefDistance(5);   // Distance where volume starts dropping
             sound.setMaxDistance(15);  // Distance where it becomes silent
@@ -190,7 +234,21 @@ export class EntityManager {
         sprite.add(sound);
 
 
-        this.nextbots.set(id, { sprite, sound });
+        this.nextbots.set(id, {
+            sprite: sprite,
+            sound: sound,
+            targetPos: new THREE.Vector3(nextbot.x, nextbot.y, nextbot.z)
+        });
+    }
+
+    removeNextbot(id) {
+        const bot = this.nextbots.get(id);
+        if (bot) {
+            bot.sound.stop();
+            this.scene.remove(bot.sound);
+            this.scene.remove(bot.sprite);
+            this.nextbots.delete(id);
+        }
     }
 
 
@@ -218,9 +276,10 @@ export class EntityManager {
             }
         }
         // Nextbot collision
-        if (this.nextbot && playerPos.distanceTo(this.nextbot.position) < 1.5) {
-            return { type: "GAME_OVER" };
-        }
+        //if (this.nextbot && playerPos.distanceTo(this.nextbot.position) < 1.5) {
+        //    return { type: "GAME_OVER" };
+        //}
+
         return null;
     }
 }

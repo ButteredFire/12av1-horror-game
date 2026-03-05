@@ -1,7 +1,8 @@
 import * as THREE from "three";
+import RAPIER from "@dimforge/rapier3d-compat";
 import { Howl } from "howler";
 
-import { CONSTS } from "./Constants";
+import { CONSTS } from "../Constants";
 import { NetworkManager } from "./NetworkManager";
 import { PlayerController } from "./PlayerController";
 import { EntityManager } from "./EntityManager";
@@ -23,6 +24,7 @@ export class Engine {
 
     /* Engine Entry Point */
     async start() {
+        await RAPIER.init();
         await this.init();
         this.startLoop();
     }
@@ -31,6 +33,7 @@ export class Engine {
     /* Engine Initialization */
     async init() {
         this.initGraphics();
+        this.initPhysWorld();
 
         const PROD_SERVERS = ["https://api.oriviet.org", "https://win-api.oriviet.org"];
         const DEV_SERVERS = ["http://localhost:3000"];
@@ -45,12 +48,13 @@ export class Engine {
         this.audioLoader = new THREE.AudioLoader();
 
         this.network = new NetworkManager(PROD_SERVERS, this.scene, this.playerName);
-        this.controls = new PlayerController(this.camera, this.renderer.domElement);
-        this.entityManager = new EntityManager(this.scene, this.listener, this.texLoader, this.gltfLoader, this.audioLoader);
-        this.mapManager = new MapManager(this.scene, this.gltfLoader);
+        this.controls = new PlayerController(this.world, this.camera, this.renderer.domElement);
+        this.entityManager = new EntityManager(this.world, this.scene, this.listener, this.texLoader, this.gltfLoader, this.audioLoader);
+        this.mapManager = new MapManager(this.world, this.scene, this.gltfLoader);
 
         await this.entityManager.loadAssets();  // Wait for all assets to load 
-        await this.mapManager.loadZone("/map/Zone.glb");
+        await this.mapManager.load("/map/school.glb"); 
+        //await this.mapManager.load("/map/Stairs.glb");
 
         this.initScene();
         this.initNetworking();
@@ -59,7 +63,7 @@ export class Engine {
 
         this.posTelemetry = document.getElementById("player-pos");
 
-        //this.mapManager.toggleDebugColliders();
+        this.mapManager.toggleDebugColliders(true, false);
     }
 
 
@@ -83,6 +87,17 @@ export class Engine {
     }
 
 
+    initPhysWorld() {
+        this.world = new RAPIER.World({ x: 0.0, y: -15.0, z: 0.0 }); // Gravity: -9.81 on the Y-axis
+
+        this.debugMesh = new THREE.LineSegments(
+            new THREE.BufferGeometry(),
+            new THREE.LineBasicMaterial({ color: 0xff0000 })
+        );
+        this.scene.add(this.debugMesh);
+    }
+
+
     /* Scene Initialization */
     initScene() {
         // Environment
@@ -91,10 +106,10 @@ export class Engine {
         const ambient = new THREE.AmbientLight(0x050505); 
         this.scene.add(ambient);
 
-        const grid = new THREE.GridHelper(500, 500);
+        //const grid = new THREE.GridHelper(500, 500);
         //const light = new THREE.DirectionalLight(0xffffff, 0.76);
 
-        this.scene.add(grid);
+        //this.scene.add(grid);
         //this.scene.add(light);
 
 
@@ -150,7 +165,7 @@ export class Engine {
             src: "/sfx/lobotomy.mp3",
             autoplay: false,
             loop: false,
-            volume: 0.1
+            volume: 0.5
         });
     }
 
@@ -211,77 +226,6 @@ export class Engine {
     }
 
 
-    checkCollision(newPos) {
-        if (!this.mapManager || this.mapManager.colliders.length === 0) return false;
-
-        const playerRadius = 0.25;
-        const maxStepHeight = 1.0;
-
-        const raycaster = new THREE.Raycaster();
-        
-        // Check collision at three height points (feet, body, head) relative to the world plane
-        const feetHeight = newPos.y - CONSTS.PLAYER_HEIGHT;
-        const bodyHeight = (feetHeight + newPos.y) / 2.0;
-        const headHeight = newPos.y;
-
-        const absHeights = [feetHeight, bodyHeight, headHeight];
-
-        const directions = [
-            new THREE.Vector3(1, 0, 0), new THREE.Vector3(-1, 0, 0),
-            new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 0, -1)
-        ];
-        const downDirection = new THREE.Vector3(0, -1, 0);
-
-        for (let h of absHeights) {
-            const origin = newPos.clone();
-            origin.y = h;
-
-            for (let dir of directions) {
-                raycaster.set(origin, dir);
-                raycaster.far = playerRadius;
-
-                const hits = raycaster.intersectObjects(this.mapManager.colliders);
-                
-                if (hits.length > 0) {
-                    const downRaycaster = new THREE.Raycaster();
-
-                    origin.y = headHeight;
-                    const downRayPos = origin;
-                    
-                    for (let dir1 of directions) {
-                        downRaycaster.set(downRayPos.add(dir1.multiplyScalar(playerRadius)), downDirection);
-                        downRaycaster.far = CONSTS.PLAYER_HEIGHT;
-                        
-                        const downHits = downRaycaster.intersectObjects(this.mapManager.colliders);
-                        
-                        if (downHits.length > 0) {
-                            const hitPointY = downHits[0].point.y;
-                            const heightDiff = hitPointY - feetHeight;
-                            console.log(`hitPoint: ${hitPointY} ; heightDiff: ${heightDiff}`);
-
-                            if (heightDiff > 0 && heightDiff <= maxStepHeight) {
-                                // Smoothly lift the player
-                                this.camera.position.lerp(
-                                    new THREE.Vector3(this.camera.position.x,
-                                                      this.camera.position.y + heightDiff + 0.1,
-                                                      this.camera.position.z),
-                                    CONSTS.LERP_FACTOR
-                                );
-
-                                return false;
-                            }
-                        }
-                    }
-
-
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
-
-
     triggerJumpscare(botType) {
         const overlay = document.getElementById("jumpscare-overlay");
         const img = document.getElementById("jumpscare-image");
@@ -335,34 +279,25 @@ export class Engine {
 
 
     update(dt) {
+        this.world.step();
+
+        //this.updateDebug();
+
         this.camera.getWorldDirection(this.worldDirection);
         this.network.sync(this.camera.position, this.worldDirection);
 
+        this.controls.update(dt);
         this.entityManager.update(dt);
 
-        this.updateCamera(dt);
         this.updatePlayer(dt);
-        
         this.updateUI();
     }
 
 
-    updateCamera(dt) {
-        const oldPos = this.camera.position.clone();
-        this.controls.update(dt);
-        const newPos = this.camera.position.clone();
-
-        this.camera.position.copy(oldPos);
-
-        this.camera.position.x = newPos.x;
-        if (this.checkCollision(this.camera.position)) {
-            this.camera.position.x = oldPos.x;
-        }
-
-        this.camera.position.z = newPos.z;
-        if (this.checkCollision(this.camera.position)) {
-            this.camera.position.z = oldPos.z;
-        }
+    updateDebug() {
+        const { vertices, colors } = this.world.debugRender();
+        this.debugMesh.geometry.setAttribute("position", new THREE.BufferAttribute(vertices, 3));
+        this.debugMesh.geometry.setAttribute("color", new THREE.BufferAttribute(colors, 4));
     }
 
 
@@ -372,22 +307,6 @@ export class Engine {
         const vector = new THREE.Vector3(0, 0, -1);
         vector.applyQuaternion(this.camera.quaternion);
         this.flashlight.target.position.copy(this.camera.position).add(vector);
-
-
-        // Falling
-        const feetHeight = this.camera.position.y - CONSTS.PLAYER_HEIGHT;
-        if (feetHeight <= CONSTS.WORLD_FLOOR_HEIGHT) {
-            this.camera.position.y = CONSTS.PLAYER_HEIGHT;
-            this.playerFallVelocity = -this.playerFallVelocity * 0.7; // Reverse velocity with 30% energy loss (bounce)
-            
-            // Stop small jittering when motion is negligible
-            if (Math.abs(this.playerFallVelocity) < 0.02)
-                this.playerFallVelocity = 0;
-        }
-        else {
-            this.playerFallVelocity += CONSTS.ACCELERATION_PER_FRAME;
-            this.camera.position.y -= CONSTS.ACCELERATION_PER_FRAME;
-        }
 
 
         // Nextbot-Player collision check

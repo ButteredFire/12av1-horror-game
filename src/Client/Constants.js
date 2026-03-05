@@ -1,8 +1,0 @@
-
-export const CONSTS = {
-    PLAYER_HEIGHT: 2.5,
-    WORLD_FLOOR_HEIGHT: 0.0,
-    
-    LERP_FACTOR: 0.15,
-    ACCELERATION_PER_FRAME: 0.01
-};
