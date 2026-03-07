@@ -1,5 +1,8 @@
 import * as THREE from "three";
 import RAPIER from "@dimforge/rapier3d-compat";
+import { Pathfinding, PathfindingHelper } from 'three-pathfinding';
+import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
+import { CONSTS } from "../Constants";
 
 
 export class MapManager {
@@ -7,6 +10,41 @@ export class MapManager {
         this.world = world;
         this.scene = scene;
         this.gltfLoader = gltfLoader;
+
+        this.pathfinding = new Pathfinding();
+        this.pathfindingHelper = new PathfindingHelper();
+        this.scene.add(this.pathfindingHelper);
+        this.zone = null;
+
+        this.origin = new THREE.Vector3(13,0,26);
+    }
+
+
+    update(dt, playerPos) {
+        return;
+        
+        let playerFeetPos = playerPos.clone();
+        playerFeetPos.y -= CONSTS.PLAYER_HEIGHT;
+
+        console.log("feet: ", playerFeetPos);
+
+        this.origin = new THREE.Vector3(0,playerFeetPos.y,0);
+
+        let groupID = this.pathfinding.getGroup(this.zone, this.origin);
+        const closest = this.pathfinding.getClosestNode(this.origin, this.zone, groupID);
+
+        let navPath = this.pathfinding.findPath(closest.centroid, playerFeetPos, this.zone, groupID);
+        if (navPath) {
+            this.pathfindingHelper.reset();
+
+            this.pathfindingHelper.setPlayerPosition(this.origin);
+            this.pathfindingHelper.setTargetPosition(playerFeetPos);
+            this.pathfindingHelper.setPath(navPath);
+        }
+        else {
+            const playerGroup = this.pathfinding.getGroup(this.zone, playerFeetPos);
+            console.log(`No navpath detected; Origin = ${groupID}, Player = ${playerGroup}`);
+        }
     }
 
 
@@ -21,8 +59,18 @@ export class MapManager {
                 child.castShadow = true;
                 child.material.side = THREE.DoubleSide;
 
-                if (child.name.startsWith("UCX")) {
+                const isCollider = child.name.includes("UCX");
+                const isNavmesh = child.name.includes("NAV");
+                if (isCollider || isNavmesh) {
                     child.visible = false;
+
+                    if (isNavmesh && !isCollider && url.includes("nav")) {
+                        child.visible = true;
+                        child.material = new THREE.MeshBasicMaterial({
+                            color: 0xff0000,
+                            wireframe: true
+                        });
+                    }
                 }
 
                 const vertices = child.geometry.attributes.position.array;
@@ -45,6 +93,50 @@ export class MapManager {
 
     
         this.scene.add(mesh);
+    }
+
+
+    async loadNavMesh(url) {
+        const gltf = await this.gltfLoader.loadAsync(url);
+        const mesh = gltf.scene;
+
+        let geometries = [];
+
+        mesh.traverse((child) => {
+            if (!child.isMesh) return;
+
+            let geom = child.geometry.toNonIndexed();
+
+            // 2. Clean up attributes. 
+            // mergeGeometries fails if one mesh has 'uv' and another doesn't.
+            // For a NavMesh, we ONLY care about 'position'.
+            const positionAttr = geom.getAttribute('position');
+            geom = new THREE.BufferGeometry();
+            geom.setAttribute('position', positionAttr);
+
+            // 3. Since you already normalized transforms in Blender, 
+            // you don't need applyMatrix4, but it's safer to keep 
+            // if you ever move objects in the Blender Hierarchy.
+            geometries.push(geom);
+        });
+
+
+        if (geometries.length > 0) {
+            try {
+                const mergedGeometry = BufferGeometryUtils.mergeGeometries(geometries);
+                const zoneData = Pathfinding.createZone(mergedGeometry, 0.5);
+
+                this.pathfinding.setZoneData(this.zone, zoneData);
+    
+                console.log("NavMesh Groups created:", this.pathfinding.zones[this.zone].groups.length);
+    
+                console.log("NavMesh merged and Pathfinding initialized!");
+            } catch (e) {
+                console.error("Merge failed:", e);
+            }
+        }
+        else
+            console.log("watdefok no navmesh!!");
     }
 
 

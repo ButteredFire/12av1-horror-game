@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { CONSTS } from "../Constants";
+import * as UTILS from "../Utils";
 import RAPIER from "@dimforge/rapier3d-compat";
 
 
@@ -19,6 +20,7 @@ export class EntityManager {
 
         this.mannequinTemplate = null;
         this.mannequin = null;
+        this.cnt = 0;
     }
 
 
@@ -48,10 +50,13 @@ export class EntityManager {
         });
 
 
+        
+
+
         // UPDATE NEXTBOTS
-        //this.nextbots.forEach((bot) => {
-        //    bot.sprite.position.lerp(bot.targetPos, alpha);
-        //});
+        this.nextbots.forEach((bot) => {
+            bot.sprite.position.lerp(bot.targetPos, alpha);
+        });
     }
 
 
@@ -202,11 +207,22 @@ export class EntityManager {
             
             if (!this.nextbots.has(id)) {
                 this.spawnNextbot(id, data);
+            } else {
+                const bot = this.nextbots.get(id);
+                bot.targetPos.set(data.x, data.y, data.z);
+                //bot.sprite.position.lerp(new THREE.Vector3(data.x, data.y, data.z), CONSTS.LERP_FACTOR);
+
+                //bot.bot.onServerUpdate(data);
+
+                // OPTIONAL: Update a "Sensor" or "Ghost Collider" here 
+                // if you want the player to physically bump into the bot.
+                //if (bot.ghostCollider) {
+                //    bot.ghostCollider.setTranslation({ x: data.x, y: data.y, z: data.z });
+                //}
             }
             
-            const bot = this.nextbots.get(id);
-            //bot.targetPos.set(data.x, data.y, data.z);
-            bot.sprite.position.lerp(new THREE.Vector3(data.x, data.y, data.z), CONSTS.LERP_FACTOR);
+            //const bot = this.nextbots.get(id);
+            //bot.sprite.position.lerp(new THREE.Vector3(data.x, data.y, data.z), CONSTS.LERP_FACTOR);
         }
     }
 
@@ -219,13 +235,13 @@ export class EntityManager {
         sprite.scale.set(5, 5, 1);
         this.scene.add(sprite);
 
-        // Sound
+        // Sounds
         const sound = new THREE.PositionalAudio(this.listener);
         
         this.audioLoader.load(`/sfx/${nextbot.sound}.mp3`, (buffer) => {
             sound.setBuffer(buffer);
-            sound.setRefDistance(5);   // Distance where volume starts dropping
-            sound.setMaxDistance(15);  // Distance where it becomes silent
+            sound.setRefDistance(3);   // Distance where volume starts dropping
+            sound.setMaxDistance(10);  // Distance where it becomes silent
             sound.setLoop(true);
             sound.setVolume(1.0);
             sound.play();
@@ -235,6 +251,7 @@ export class EntityManager {
 
 
         this.nextbots.set(id, {
+            bot: new ClientNextbot(sprite),
             sprite: sprite,
             sound: sound,
             targetPos: new THREE.Vector3(nextbot.x, nextbot.y, nextbot.z)
@@ -281,5 +298,50 @@ export class EntityManager {
         //}
 
         return null;
+    }
+}
+
+
+class ClientNextbot {
+    constructor(sprite) {
+        this.buffer = []; // Stores { x, y, z, timestamp }
+        this.sprite = sprite;
+        this.renderPos = new THREE.Vector3();
+    }
+
+    onServerUpdate(data) {
+        // Push new data with the server's current timestamp
+        this.buffer.push({
+            x: data.x,
+            y: data.y,
+            z: data.z,
+            t: Date.now()
+        });
+
+        // Keep buffer small (last 10 updates)
+        if (this.buffer.length > 10) this.buffer.shift();
+    }
+
+    update(renderTime) {
+        // Look 100ms into the past
+        const targetTime = renderTime - 100;
+
+        // Find the two snapshots we are currently between
+        let i = 0;
+        for (i = 0; i < this.buffer.length - 1; i++) {
+            if (this.buffer[i + 1].t > targetTime) break;
+        }
+
+        const b0 = this.buffer[i];
+        const b1 = this.buffer[i + 1];
+
+        if (b0 && b1) {
+            // Calculate how far we are between snapshot 0 and 1
+            const lerpFactor = (targetTime - b0.t) / (b1.t - b0.t);
+            
+            this.sprite.position.x = THREE.MathUtils.lerp(b0.x, b1.x, lerpFactor);
+            this.sprite.position.y = THREE.MathUtils.lerp(b0.y, b1.y, lerpFactor);
+            this.sprite.position.z = THREE.MathUtils.lerp(b0.z, b1.z, lerpFactor);
+        }
     }
 }

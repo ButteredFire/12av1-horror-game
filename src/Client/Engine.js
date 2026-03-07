@@ -3,6 +3,7 @@ import RAPIER from "@dimforge/rapier3d-compat";
 import { Howl } from "howler";
 
 import { CONSTS } from "../Constants";
+import * as UTILS from "../Utils";
 import { NetworkManager } from "./NetworkManager";
 import { PlayerController } from "./PlayerController";
 import { EntityManager } from "./EntityManager";
@@ -47,13 +48,15 @@ export class Engine {
 
         this.audioLoader = new THREE.AudioLoader();
 
-        this.network = new NetworkManager(PROD_SERVERS, this.scene, this.playerName);
+        this.network = new NetworkManager(DEV_SERVERS, this.scene, this.playerName);
         this.controls = new PlayerController(this.world, this.camera, this.renderer.domElement);
         this.entityManager = new EntityManager(this.world, this.scene, this.listener, this.texLoader, this.gltfLoader, this.audioLoader);
         this.mapManager = new MapManager(this.world, this.scene, this.gltfLoader);
 
         await this.entityManager.loadAssets();  // Wait for all assets to load 
-        await this.mapManager.load("/map/school.glb"); 
+        await this.mapManager.load("/map/SchoolModel.glb"); 
+        //await this.mapManager.loadNavMesh("/map/SchoolModel_NAV.glb"); 
+        //await this.mapManager.loadNavMesh("/map/school_2_nav.glb"); 
         //await this.mapManager.load("/map/Stairs.glb");
 
         this.initScene();
@@ -165,7 +168,8 @@ export class Engine {
             src: "/sfx/lobotomy.mp3",
             autoplay: false,
             loop: false,
-            volume: 0.5
+            rate: 1.0,
+            volume: 0.15
         });
     }
 
@@ -217,10 +221,12 @@ export class Engine {
 
         // PLAYER-SPECIFIC EVENTS
         this.alive = true;
+
         this.network.addEvent("jumpscare", (data) => {
-            if (this.alive || true) {
-                this.triggerJumpscare(data.type);
+            if (this.alive) {
                 this.alive = false;
+                this.triggerJumpscare(data.bot.type);
+                this.alive = true;
             }
         });
     }
@@ -282,6 +288,7 @@ export class Engine {
         this.world.step();
 
         //this.updateDebug();
+        this.mapManager.update(dt, this.camera.position);
 
         this.camera.getWorldDirection(this.worldDirection);
         this.network.sync(this.camera.position, this.worldDirection);
