@@ -101,20 +101,6 @@ html, body {
 }
 
 
-#jumpscare-overlay-1 {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  z-index: 999;
-
-  background: white;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
 #jumpscare-overlay {
   position: fixed;
   top: 0;
@@ -155,15 +141,6 @@ html, body {
 }
 
 
-
-
-
-
-
-
-
-
-
 #jumpscare-overlay.trigger {
   animation: fade-out-seq 1s forwards;
 }
@@ -172,9 +149,6 @@ html, body {
   100% { display: none; opacity: 0; }
 }
 
-#jumpscare-overlay.what {
-  transition: opacity 1.5s ease-out, background 1.5s ease-out;
-}
 #jumpscare-overlay.hidden {
   opacity: 0;
   /* Optional: set display to none after the transition for layout purposes */
@@ -185,4 +159,25 @@ html, body {
 .fade-out {
   opacity: 0;
   transition: opacity 1s ease-in;
+}
+
+
+
+
+
+#loading-overlay {
+  display: flex;
+  
+  position: fixed;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(10px);
+  
+  z-index: 500;
+  width: 100%;
+  height: 100%;
+
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
 }

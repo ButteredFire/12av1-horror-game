@@ -50,10 +50,19 @@
     </div>
 
 
+    <div id="loading-overlay">
+      <img src="./public/cd.gif" style="max-height: 40vh;"/>
+      <h1>Loading...</h1>
+    </div>
+
+
     <script>
       const disconnectOverlay = document.getElementById("disconnect-overlay");
       disconnectOverlay.classList.remove("visible");
       disconnectOverlay.style.display = "none";
+
+      const loading = document.getElementById("loading-overlay");
+      loading.style.display = "none";
     </script>
   </body>
 

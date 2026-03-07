@@ -25,8 +25,14 @@ export class Engine {
 
     /* Engine Entry Point */
     async start() {
+        const loading = document.getElementById("loading-overlay");
+        loading.style.display = "flex";
+
         await RAPIER.init();
         await this.init();
+
+        loading.style.display = "none";
+
         this.startLoop();
     }
 

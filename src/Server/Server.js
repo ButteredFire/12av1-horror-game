@@ -339,6 +339,6 @@ setInterval(() => {
 
 setInterval(() => {
     io.emit("nextbotsUpdate", nextbots); // (20Hz)
-}, 1000 / 120);
+}, 1000 / 90);
 
 httpServer.listen(port, host, () => console.log(`Server is running on http://${host}:${port}`));
