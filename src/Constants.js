@@ -12,7 +12,7 @@ export const CONSTS = {
     WORLD_UP_VEC: new THREE.Vector3(0, 1, 0),
     WORLD_FLOOR_HEIGHT: 0.0,
     
-    LERP_FACTOR: 0.15,
+    LERP_FACTOR: 0.2,
     TARGET_FPS: 60,
     ACCELERATION_PER_FRAME: 0.15,
 };

@@ -10,7 +10,6 @@ import { createServer } from 'http';
 import { Server } from 'socket.io';
 
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js'
 import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
 import { Pathfinding } from 'three-pathfinding';
 
@@ -56,72 +55,25 @@ for (let bot of botTypes) {
 }
 
 
-console.log(nextbots);
 
 
 
-
+import Piscina from 'piscina';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const mapPath = path.resolve(__dirname, "../../public/map");
-const navPath = path.resolve(mapPath, "SchoolModel_NAV.glb");
-
-
-const gltfLoader = new GLTFLoader();
-
-const pathfinding = new Pathfinding();
 const ZONE = "school";
+const workerPath = path.resolve(__dirname, "PathfinderWorker.mjs");
+const navPath = path.resolve(__dirname, "../../public/map/SchoolModel_NAV.glb");
 
-
-// 2. Read the file from disk manually
-const data = fs.readFileSync(navPath);
-const arrayBuffer = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
-
-gltfLoader.parse(arrayBuffer, "", (gltf) => {
-    const mesh = gltf.scene;
-
-    let geometries = [];
-
-    mesh.traverse((child) => {
-        if (child.isMesh) {
-            // 1. Get the geometry and ensure it is non-indexed 
-            // This prevents the 'getIndex' null error
-            let geom = child.geometry.toNonIndexed();
-
-            // 2. Clean up attributes. 
-            // mergeGeometries fails if one mesh has 'uv' and another doesn't.
-            // For a NavMesh, we ONLY care about 'position'.
-            const positionAttr = geom.getAttribute('position');
-            geom = new THREE.BufferGeometry();
-            geom.setAttribute('position', positionAttr);
-
-            // 3. Since you already normalized transforms in Blender, 
-            // you don't need applyMatrix4, but it's safer to keep 
-            // if you ever move objects in the Blender Hierarchy.
-            geometries.push(geom);
-        }
-    });
-
-    if (geometries.length > 0) {
-        try {
-            const mergedGeometry = BufferGeometryUtils.mergeGeometries(geometries);
-            const zoneData = Pathfinding.createZone(mergedGeometry, 0.5);
-            pathfinding.setZoneData(ZONE, zoneData);
-
-            console.log("NavMesh Groups created:", pathfinding.zones[ZONE].groups.length);
-
-            console.log("NavMesh merged and Pathfinding initialized!");
-        } catch (e) {
-            console.error("Merge failed:", e);
-        }
+// Initialize Piscina
+const pathPool = new Piscina({
+    filename: workerPath,
+    workerData: {
+        zoneName: ZONE,
+        navPath: navPath // Just pass the string path!
     }
-
-    console.log("NavMesh loaded successfully on server!");
-
-}, (error) => {
-    console.error("Error parsing GLB:", error);
 });
 
 
@@ -184,34 +136,6 @@ io.on("connection", (socket) => {
 
 
 
-const BOT_RADIUS = 5.0; // Distance to keep between bots
-const BOT_RADIUS_SQ = BOT_RADIUS * BOT_RADIUS;
-const SEPARATION_WEIGHT = 0.1; // How strongly they push away
-
-function applySeparation(dt, currentBot, allBots) {
-    let pushX = 0;
-    let pushZ = 0;
-
-    for (let id in allBots) {
-        let other = allBots[id];
-        if (other === currentBot) continue; // Don't push against yourself
-
-        let dx = currentBot.x - other.x;
-        let dz = currentBot.z - other.z;
-        let distSq = dx * dx + dz * dz;
-
-        // If they are closer than the combined radius
-        if (distSq < BOT_RADIUS_SQ && distSq > 0) {
-            let dist = Math.sqrt(distSq);
-            // Inversely proportional push: closer = stronger push
-            pushX += (dx / dist) * SEPARATION_WEIGHT;
-            pushZ += (dz / dist) * SEPARATION_WEIGHT;
-        }
-    }
-    
-    currentBot.x += pushX * dt;
-    currentBot.z += pushZ * dt;
-}
 
 
 
@@ -224,15 +148,7 @@ const NEXTBOT_REEVAL_INTV = 30;  // Nextbot closest-player re-evaluation interva
 let lastTime = Date.now();
 
 const PATH_TICK_RATE = 200; // Recalculate path every 200ms (5Hz)
-const botVec = new THREE.Vector3();
-const playerVec = new THREE.Vector3();
-const targetVec = new THREE.Vector3();
 
-// Initialize bots with staggered update timers
-Object.values(nextbots).forEach((bot, index) => {
-    bot.nextPathUpdate = Date.now() + (index * 20); // Stagger by 20ms each
-    bot.currentPath = [];
-});
 
 setInterval(() => {
     const now = Date.now();
@@ -242,9 +158,10 @@ setInterval(() => {
     const playerIds = Object.keys(players);
     if (playerIds.length === 0) return;
 
+    
     for (let id in nextbots) {
-        let bot = nextbots[id];
-        
+        const bot = nextbots[id];
+
         // 1. Target the closest player (Optimization: Use Squared Distance)
         let closestPlayer = null;
         let closestPlayerID = null;
@@ -252,7 +169,13 @@ setInterval(() => {
 
         for (let pId of playerIds) {
             const p = players[pId];
-            const dSq = Math.pow(p.x - bot.x, 2) + Math.pow(p.z - bot.z, 2);
+            const dx = p.x - bot.x;
+            //const dy = (p.y - CONSTS.PLAYER_HEIGHT) - (bot.y - CONSTS.NEXTBOT_HEIGHT);
+            const dz = p.z - bot.z;
+
+            //const dSq = dx * dx + dy * dy + dz * dz;
+            const dSq = dx * dx + dz * dz;
+            //console.log(p.playerName, "dist:", Math.sqrt(dSq), `(dx, dy, dz) = (${dx.toFixed(3)}, ${dy.toFixed(3)}, ${dz.toFixed(3)})`);
             if (dSq < minDistSq) {
                 minDistSq = dSq;
                 closestPlayer = p;
@@ -260,85 +183,123 @@ setInterval(() => {
             }
         }
 
+
         if (closestPlayer) {
-            // 2. STAGGERED PATHFINDING (The CPU Saver)
-            if (now > (bot.nextPathUpdate || 0)) {
-                botVec.set(bot.x, bot.y - CONSTS.NEXTBOT_HEIGHT, bot.z);
-                playerVec.set(closestPlayer.x, closestPlayer.y - CONSTS.PLAYER_HEIGHT, closestPlayer.z);
+            if (!bot.isCalculating && (Date.now() - (bot.lastPathUpdate || 0) > PATH_TICK_RATE)) {
+                bot.isCalculating = true;
 
-                const groupID = pathfinding.getGroup(ZONE, botVec);
-                
-                // Only find path if we are on the mesh
-                if (groupID !== null) {
-                    bot.currentPath = pathfinding.findPath(botVec, playerVec, ZONE, groupID);
-                    if (!bot.currentPath) {
-                        const closest = pathfinding.getClosestNode(botVec, ZONE, groupID);
-                        bot.currentPath = pathfinding.findPath(closest.centroid, playerVec, ZONE, groupID) || [];
-                    }
-                }
-                
-                bot.nextPathUpdate = now + PATH_TICK_RATE;
+                // 2. Run the task in the pool
+                calcBotPath(id, bot, closestPlayer);
             }
 
-            // 3. MOVEMENT (High Frequency)
-            let moveTarget = null;
-            if (bot.currentPath && bot.currentPath.length > 0) {
-                moveTarget = bot.currentPath[0];
-                
-                // If we are close to the first waypoint, shift to the next one to smooth corners
-                const dNextSq = Math.pow(moveTarget.x - bot.x, 2) + Math.pow(moveTarget.z - bot.z, 2);
-                if (dNextSq < 0.5 && bot.currentPath.length > 1) {
-                    bot.currentPath.shift();
-                    moveTarget = bot.currentPath[0];
-                }
-            } else {
-                // Fallback: move toward player if off-mesh
-                moveTarget = closestPlayer;
-            }
-
-            if (moveTarget) {
-                const dx = moveTarget.x - bot.x;
-                const dz = moveTarget.z - bot.z;
-                const angle = Math.atan2(dx, dz);
-
-                bot.x += Math.sin(angle) * (CONSTS.NEXTBOT_SPEED * dt);
-                bot.z += Math.cos(angle) * (CONSTS.NEXTBOT_SPEED * dt);
-                
-                // Smoothly interpolate Y to avoid "teleporting" up stairs
-                const targetY = (moveTarget.y || 0) + CONSTS.NEXTBOT_HEIGHT;
-                bot.y += (targetY - bot.y) * 0.2; 
-            }
-
-            // 4. OPTIMIZED SEPARATION (Radius checking)
-            for (let otherId in nextbots) {
-                if (id === otherId) continue;
-                const ob = nextbots[otherId];
-                const dx = bot.x - ob.x;
-                const dz = bot.z - ob.z;
-                const dSq = dx * dx + dz * dz;
-                if (dSq < 1.44) { // (1.2m radius squared)
-                    const d = Math.sqrt(dSq) || 1;
-                    bot.x += (dx / d) * 0.05;
-                    bot.z += (dz / d) * 0.05;
-                }
-            }
-
-            // 5. JUMPSCARE TRIGGER
-            if (minDistSq < (CONSTS.NEXTBOT_KILL_DISTANCE ** 2)) {
-                io.to(closestPlayerID).emit("jumpscare", { botID: id, bot: bot });
-                // Reset bot or handle death logic
-
-                bot.x = 0;
-                bot.z = 0;
-            }
+            moveBot(id, dt, bot, closestPlayer, closestPlayerID, minDistSq);
         }
     }
-    
-    //io.emit("nextbotsUpdate", nextbots);
-}, 1000 / 60);
+}, 1000 / 20);
 
 setInterval(() => {
-    io.emit("nextbotsUpdate", nextbots); // (20Hz)
-}, 1000 / 90);
+    io.emit("nextbotsUpdate", nextbots);
+}, 1000 / 60);
+
+
+async function calcBotPath(id, bot, player) {
+    const newPath = await pathPool.run({
+        botVec: { x: bot.x, y: bot.y - CONSTS.NEXTBOT_HEIGHT, z: bot.z },
+        playerVec: { x: player.x, y: player.y - CONSTS.PLAYER_HEIGHT, z: player.z }
+    });
+
+    if (newPath && newPath.length > 0) {
+        // If the first waypoint is closer than 1m, it's probably 
+        // a "backstep" to a previous position. Skip it.
+        const dSq = Math.pow(newPath[0].x - bot.x, 2) + Math.pow(newPath[0].z - bot.z, 2);
+        if (dSq < 1.0 && newPath.length > 1) {
+            newPath.shift(); 
+        }
+        
+        bot.currentPath = newPath;
+    }
+    bot.isCalculating = false;
+    bot.lastPathUpdate = Date.now();
+}
+
+
+/**
+ * Handles high-frequency movement, gravity, and floor snapping.
+ * Runs at 60Hz on the Main Thread.
+ */
+function moveBot(id, dt, bot, closestPlayer, closestPlayerID, minDistSq) {
+    if (!bot.currentPath || bot.currentPath.length < 0) return;
+    
+    const moveTarget = bot.currentPath[0];
+    const botPos = new THREE.Vector3(bot.x, bot.y, bot.z);
+    const targetPos = new THREE.Vector3(moveTarget.x, moveTarget.y, moveTarget.z);
+
+    const dist = targetPos.sub(botPos);
+
+    if (moveTarget) {
+        const dx = moveTarget.x - bot.x;
+        const dz = moveTarget.z - bot.z;
+        const angle = Math.atan2(dx, dz);
+
+        bot.x += Math.sin(angle) * (CONSTS.NEXTBOT_SPEED * dt);
+        bot.z += Math.cos(angle) * (CONSTS.NEXTBOT_SPEED * dt);
+        
+        // Smoothly interpolate Y to avoid "teleporting" up stairs
+        const targetY = (moveTarget.y || 0) + CONSTS.NEXTBOT_HEIGHT;
+        bot.y += (targetY - bot.y) * 0.2; 
+    }
+    else {
+        //bot.currentPath.shift();
+    }
+
+
+    /*
+    let moveTarget = null;
+    if (bot.currentPath && bot.currentPath.length > 0) {
+        moveTarget = bot.currentPath[0];
+    }
+    // DO NOT DEFAULT TO CLOSEST PLAYER (for testing)
+    //else {
+    //    // Fallback: move toward player if off-mesh
+    //    moveTarget = closestPlayer;
+    //}
+
+    if (moveTarget) {
+        const dx = moveTarget.x - bot.x;
+        const dz = moveTarget.z - bot.z;
+        const angle = Math.atan2(dx, dz);
+
+        bot.x += Math.sin(angle) * (CONSTS.NEXTBOT_SPEED * dt);
+        bot.z += Math.cos(angle) * (CONSTS.NEXTBOT_SPEED * dt);
+        
+        // Smoothly interpolate Y to avoid "teleporting" up stairs
+        const targetY = (moveTarget.y || 0) + CONSTS.NEXTBOT_HEIGHT;
+        bot.y += (targetY - bot.y) * 0.2; 
+    }
+
+    // 4. OPTIMIZED SEPARATION (Radius checking)
+    for (let otherId in nextbots) {
+        if (id === otherId) continue;
+        const ob = nextbots[otherId];
+        const dx = bot.x - ob.x;
+        const dz = bot.z - ob.z;
+        const dSq = dx * dx + dz * dz;
+        if (dSq < 1.44) { // (1.2m radius squared)
+            const d = Math.sqrt(dSq) || 1;
+            bot.x += (dx / d) * 0.05;
+            bot.z += (dz / d) * 0.05;
+        }
+    }
+    */
+
+    // 5. JUMPSCARE TRIGGER
+    if (minDistSq < (CONSTS.NEXTBOT_KILL_DISTANCE ** 2)) {
+        io.to(closestPlayerID).emit("jumpscare", { botID: id, bot: bot });
+        // Reset bot or handle death logic
+
+        bot.x = 0;
+        bot.z = 0;
+    }
+}
 
 httpServer.listen(port, host, () => console.log(`Server is running on http://${host}:${port}`));

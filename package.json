@@ -19,6 +19,7 @@
     "express": "^4.22.1",
     "howler": "^2.2.4",
     "nipplejs": "^0.10.2",
+    "piscina": "^5.1.4",
     "socket.io": "^4.7.2",
     "socket.io-client": "^4.7.2",
     "three": "^0.160.0",

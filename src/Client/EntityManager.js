@@ -3,6 +3,8 @@ import { CONSTS } from "../Constants";
 import * as UTILS from "../Utils";
 import RAPIER from "@dimforge/rapier3d-compat";
 
+import { Pathfinding, PathfindingHelper } from 'three-pathfinding';
+
 
 export class EntityManager {
     constructor(world, scene, listener, texLoader, gltfLoader, audioLoader) {
@@ -209,6 +211,9 @@ export class EntityManager {
                 this.spawnNextbot(id, data);
             } else {
                 const bot = this.nextbots.get(id);
+
+                console.log(id, ": ", data.currentPath);
+
                 bot.targetPos.set(data.x, data.y, data.z);
                 //bot.sprite.position.lerp(new THREE.Vector3(data.x, data.y, data.z), CONSTS.LERP_FACTOR);
 
@@ -250,13 +255,32 @@ export class EntityManager {
         sprite.add(sound);
 
 
+        const pathHelper = new PathfindingHelper();
+        this.scene.add(pathHelper);
+
+
         this.nextbots.set(id, {
-            bot: new ClientNextbot(sprite),
             sprite: sprite,
             sound: sound,
-            targetPos: new THREE.Vector3(nextbot.x, nextbot.y, nextbot.z)
+            targetPos: new THREE.Vector3(nextbot.x, nextbot.y, nextbot.z),
+            pathfindingHelper: pathHelper
         });
     }
+
+
+    visualize(data, camPos) {
+        const bot = this.nextbots.get(data.id);
+
+        const botVec = new THREE.Vector3(data.bot.x, data.bot.y - CONSTS.NEXTBOT_HEIGHT, data.bot.z);
+        const playerVec = new THREE.Vector3(camPos.x, camPos.y - CONSTS.PLAYER_HEIGHT, camPos.z);
+
+
+        bot.pathfindingHelper.reset();
+        bot.pathfindingHelper.setPlayerPosition(botVec);
+        bot.pathfindingHelper.setTargetPosition(playerVec);
+        bot.pathfindingHelper.setPath(data.currentPath);
+    }
+
 
     removeNextbot(id) {
         const bot = this.nextbots.get(id);
@@ -298,50 +322,5 @@ export class EntityManager {
         //}
 
         return null;
-    }
-}
-
-
-class ClientNextbot {
-    constructor(sprite) {
-        this.buffer = []; // Stores { x, y, z, timestamp }
-        this.sprite = sprite;
-        this.renderPos = new THREE.Vector3();
-    }
-
-    onServerUpdate(data) {
-        // Push new data with the server's current timestamp
-        this.buffer.push({
-            x: data.x,
-            y: data.y,
-            z: data.z,
-            t: Date.now()
-        });
-
-        // Keep buffer small (last 10 updates)
-        if (this.buffer.length > 10) this.buffer.shift();
-    }
-
-    update(renderTime) {
-        // Look 100ms into the past
-        const targetTime = renderTime - 100;
-
-        // Find the two snapshots we are currently between
-        let i = 0;
-        for (i = 0; i < this.buffer.length - 1; i++) {
-            if (this.buffer[i + 1].t > targetTime) break;
-        }
-
-        const b0 = this.buffer[i];
-        const b1 = this.buffer[i + 1];
-
-        if (b0 && b1) {
-            // Calculate how far we are between snapshot 0 and 1
-            const lerpFactor = (targetTime - b0.t) / (b1.t - b0.t);
-            
-            this.sprite.position.x = THREE.MathUtils.lerp(b0.x, b1.x, lerpFactor);
-            this.sprite.position.y = THREE.MathUtils.lerp(b0.y, b1.y, lerpFactor);
-            this.sprite.position.z = THREE.MathUtils.lerp(b0.z, b1.z, lerpFactor);
-        }
     }
 }

@@ -34,6 +34,9 @@ export class NetworkManager {
 
             telemetryServer.innerHTML = this.urls[this.currentUrlIdx];
 
+            const loading = document.getElementById("loading-overlay");
+            loading.style.display = "none";
+
             requestAnimationFrame(() => {
                 disconnectOverlay.classList.remove("visible");
                 disconnectOverlay.style.display = "none";

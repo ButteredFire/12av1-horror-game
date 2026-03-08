@@ -31,8 +31,6 @@ export class Engine {
         await RAPIER.init();
         await this.init();
 
-        loading.style.display = "none";
-
         this.startLoop();
     }
 
