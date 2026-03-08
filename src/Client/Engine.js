@@ -43,7 +43,7 @@ export class Engine {
         this.initGraphics();
         this.initPhysWorld();
 
-        const PROD_SERVERS = ["https://api.oriviet.org", "https://win-api.oriviet.org"];
+        const PROD_SERVERS = ["https://win-api.oriviet.org", "https://api.oriviet.org"];
         const DEV_SERVERS = ["http://localhost:3000"];
 
         this.texLoader = new THREE.TextureLoader();
