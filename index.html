@@ -18,6 +18,59 @@
     </div>
 
 
+    <div id="lobby-ui" style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:9999; display:flex; flex-direction:column; align-items:center; justify-content:center; color:white; font-family:sans-serif;">
+      <h1 id="lobby-status">WAITING FOR HOST</h1>
+      <button id="host-start-btn" style="display:none; padding:20px; font-size:24px; background:gold; border:none; cursor:pointer;">START GAME</button>
+    </div>
+    
+    <div id="game-over-ui" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:black; z-index:10000; color:white; flex-direction:column; align-items:center; justify-content:center;">
+        <h1>🏆 RANKINGS</h1>
+        <div id="leaderboard"></div>
+        <button onclick="location.reload()">REPLAY</button>
+    </div>
+
+
+    <div id="host-hud" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; border:20px solid rgba(0,255,0,0.2); pointer-events:none; box-sizing:border-box;">
+      <div style="position:absolute; top:40px; left:40px; color:#0f0; font-family:monospace; font-size:20px;">
+          COMMAND CENTER<br>
+          STATUS: <span id="host-status">WAITING FOR PLAYERS</span>
+        </div>
+    </div>
+    
+
+
+    <div id="timer-display" style="position:fixed; top:20px; left:50%; transform:translateX(-50%); color:white; font-family:monospace; font-size:32px; z-index:100;"></div>
+
+
+
+    <div id="player-hud" style="position:fixed; top:5%; right:5%; background:rgba(0,0,0,0.5); padding:10px; border-radius:5px; color:white; font-family:monospace; display:none; z-index:100;">
+      <div style="color:#00d2ff; font-weight:bold; border-bottom:1px solid #00d2ff; margin-bottom:5px;">TOP 3 RAGAMUFFINS</div>
+      <div id="player-leaderboard-mini"></div>
+    </div>
+    
+    <div id="host-tactical-hud" style="position:fixed; top:0; left:0; width:100%; height:100%; display:none; pointer-events:none; border: 2px solid #0f0; box-sizing: border-box; z-index:200;">
+        <div style="position:absolute; right:5%; top:5%; background:rgba(0,20,0,0.8); border:1px solid #0f0; padding:20px; width:35%; color:#0f0; font-family:monospace;">
+            <h3 style="margin-top:0; border-bottom:1px solid #0f0;">ACTIVE PLAYER DATA</h3>
+            <div id="host-leaderboard-full"></div>
+        </div>
+    </div>
+
+
+    <div id="death-countdown-overlay" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(255,0,0,0.4); z-index:9999; flex-direction:column; align-items:center; justify-content:center; color:white; font-family:monospace;">
+      <img src="./public/laughing-cat.jpg" style="max-height: 40vh;"/>
+        <h1>TWIN U GOT CAUGHT TS FRYIN ME 😭</h1>
+        <h3>RESPAWNING IN...</h3>
+        <div id="death-timer-num" style="font-size:20px; font-weight:bold;">5</div>
+    </div>
+
+
+    <div id="end-screen" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:black; z-index:3000; flex-direction:column; align-items:center; justify-content:center; color:white;">
+        <h1 style="color:gold;">MISSION COMPLETE</h1>
+        <div id="final-scores" style="width:300px; text-align:left;"></div>
+        <button onclick="location.reload()" style="margin-top:20px; padding:10px 20px;">BACK TO LOBBY</button>
+    </div>
+
+
     <!-- Player & game telemetry data-->
     <div id="telemetry">
       <h3>Server: <span id="server-joined"></span></h3>
@@ -63,6 +116,9 @@
 
       const loading = document.getElementById("loading-overlay");
       loading.style.display = "none";
+
+      const lobbyUI = document.getElementById("lobby-ui");
+      lobbyUI.style.display = "none";
     </script>
   </body>
 

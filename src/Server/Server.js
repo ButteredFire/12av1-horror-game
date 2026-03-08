@@ -79,28 +79,127 @@ const pathPool = new Piscina({
 
 
 
+let pathfinding = new Pathfinding();
+const loader = new GLTFLoader();
+
+// Read file from disk
+const data = fs.readFileSync(navPath);
+const arrayBuffer = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+
+loader.parse(arrayBuffer, '', (gltf) => {
+    const geometries = [];
+    gltf.scene.traverse((child) => {
+        if (child.isMesh) {
+            let geom = child.geometry.toNonIndexed();
+            const positionAttr = geom.getAttribute('position');
+            geom = new THREE.BufferGeometry();
+            geom.setAttribute('position', positionAttr);
+            geometries.push(geom);
+        }
+    });
+
+    if (geometries.length === 0) {
+        return reject(new Error("No meshes found in NavMesh GLB"));
+    }
+
+    const merged = BufferGeometryUtils.mergeGeometries(geometries);
+    const welded = BufferGeometryUtils.mergeVertices(merged, 0.1);
+    const zoneData = Pathfinding.createZone(welded, 0.5);
+    
+    pathfinding.setZoneData(ZONE, zoneData);
+});
 
 
 
 
+let coins = [];
+
+/*
+function spawnCoinsOnNavMesh() {
+    coins = [];
+    const zone = pathfinding.zones[ZONE]; 
+    if (!zone) return console.error("NavMesh not loaded for spawning!");
+    
+    const triangles = zone.groups[0]; 
+    for (let i = 0; i < 40; i++) { // Reveal-ready count
+        const tri = triangles[Math.floor(Math.random() * triangles.length)];
+        coins.push({
+            id: i,
+            x: tri.centroid.x,
+            y: tri.centroid.y + 0.5, 
+            z: tri.centroid.z,
+            collected: false
+        });
+    }
+}
+*/
+function spawnCoinsOnNavMesh() {
+    coins = [];
+    const zone = pathfinding.zones['school'];
+    const triangles = [...zone.groups[0]]; // Clone triangle array
+    const MIN_DISTANCE = 8; // Meters between coins
+
+    // Shuffle triangles to ensure variety
+    for (let i = triangles.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [triangles[i], triangles[j]] = [triangles[j], triangles[i]];
+    }
+
+    for (const tri of triangles) {
+        if (coins.length >= 200) break;
+
+        const pos = { x: tri.centroid.x, y: tri.centroid.y + 0.8, z: tri.centroid.z };
+        
+        // Check if this position is too close to any existing coin
+        const tooClose = coins.some(c => 
+            Math.sqrt((c.x - pos.x)**2 + (c.z - pos.z)**2) < MIN_DISTANCE
+        );
+
+        if (!tooClose) {
+            coins.push({ id: coins.length, ...pos, collected: false });
+        }
+    }
+    return coins;
+}
+
+
+
+
+let gameState = "LOBBY"; 
+let hostPlayerID = null;
+
+let gameTimer = 60 * 3;
+let timerInterval;
+let aiInterval;
 
 io.on("connection", (socket) => {
-    console.log("NEW CONNECTION RECEIVED");
 
     const playerName = socket.handshake.query.playerName || `Ragamuffin #${playerCount + 1}`;
+    let isHost = false;
+    if (playerName === "MDTCO") {
+        isHost = true;
+        hostPlayerID = socket.id;
+        socket.emit("assignHost");
+    }
+    
+    console.log("NEW CONNECTION RECEIVED", (isHost ? "(HOST)" : ""));
 
     players[socket.id] = {
+        isHost: isHost,
         playerName: playerName,
         x: 0,
         y: 0,
         z: 0,
         ry: 0,
-        chased: false
+        chased: false,
+        invincible: false,
+        killed: 0
     };
     playerCount++;
 
     // Send the current world state to the new player
     socket.emit("init", {
+        isHost: isHost,
         playerName: playerName,     // Also pass in player name in case the client sends and keeps an empty name
         id: socket.id,
         players: players,
@@ -132,8 +231,71 @@ io.on("connection", (socket) => {
 
         io.emit("playerDisconnected", socket.id);
     });
+
+
+
+    // Send lobby status immediately
+    socket.emit("lobbyStatus", { 
+        isHost: players[socket.id].isHost,
+        gameState: gameState 
+    });
+
+
+    socket.on("startGame", () => {
+        if (players[socket.id].isHost && gameState === "LOBBY") {
+            gameState = "PLAYING";
+            spawnCoinsOnNavMesh();
+            startGameLoop();
+            startAILoop();
+            io.emit("gameStarted", { coins });
+        }
+    });
+
+    socket.on("collectCoin", (coinId) => {
+        const coin = coins.find(c => c.id === coinId && !c.collected);
+        if (coin && players[socket.id]) {
+            coin.collected = true;
+            players[socket.id].score = (players[socket.id].score || 0) + 1;
+            io.emit("coinCollected", { 
+                coinId, 
+                playerId: socket.id, 
+                score: players[socket.id].score 
+            });
+        }
+    });
+
+    socket.on("playerRespawned", () => {
+        players[socket.id].invincible = false;
+    });
 });
 
+
+
+function startGameLoop() {
+    timerInterval = setInterval(() => {
+        gameTimer--;
+        io.emit("timerUpdate", gameTimer);
+
+        if (gameTimer <= 0) {
+            endGame();
+        }
+    }, 1000);
+}
+
+
+
+function endGame() {
+    clearInterval(timerInterval);
+    clearInterval(aiInterval);
+
+    gameState = "ENDED";
+    
+    // Sort players by score for the final reveal
+    delete players[hostPlayerID];
+
+    
+    io.emit("gameOver", {players: players});
+}
 
 
 
@@ -150,56 +312,62 @@ let lastTime = Date.now();
 const PATH_TICK_RATE = 200; // Recalculate path every 200ms (5Hz)
 
 
-setInterval(() => {
-    const now = Date.now();
-    const dt = (now - lastTime) / 1000;
-    lastTime = now;
-
-    const playerIds = Object.keys(players);
-    if (playerIds.length === 0) return;
-
+function startAILoop() {
+    aiInterval = setInterval(() => {
+        const now = Date.now();
+        const dt = (now - lastTime) / 1000;
+        lastTime = now;
     
-    for (let id in nextbots) {
-        const bot = nextbots[id];
+        const playerIds = Object.keys(players);
+        if (playerIds.length === 0) return;
+    
+        
+        for (let id in nextbots) {
+            const bot = nextbots[id];
+    
+            // 1. Target the closest player (Optimization: Use Squared Distance)
+            let closestPlayer = null;
+            let closestPlayerID = null;
+            let minDistSq = Infinity;
+    
+            for (let pId of playerIds) {
+                const p = players[pId];
 
-        // 1. Target the closest player (Optimization: Use Squared Distance)
-        let closestPlayer = null;
-        let closestPlayerID = null;
-        let minDistSq = Infinity;
+                if (p.isHost || p.invincible) continue;
 
-        for (let pId of playerIds) {
-            const p = players[pId];
-            const dx = p.x - bot.x;
-            //const dy = (p.y - CONSTS.PLAYER_HEIGHT) - (bot.y - CONSTS.NEXTBOT_HEIGHT);
-            const dz = p.z - bot.z;
-
-            //const dSq = dx * dx + dy * dy + dz * dz;
-            const dSq = dx * dx + dz * dz;
-            //console.log(p.playerName, "dist:", Math.sqrt(dSq), `(dx, dy, dz) = (${dx.toFixed(3)}, ${dy.toFixed(3)}, ${dz.toFixed(3)})`);
-            if (dSq < minDistSq) {
-                minDistSq = dSq;
-                closestPlayer = p;
-                closestPlayerID = pId;
+                const dx = p.x - bot.x;
+                //const dy = (p.y - CONSTS.PLAYER_HEIGHT) - (bot.y - CONSTS.NEXTBOT_HEIGHT);
+                const dz = p.z - bot.z;
+    
+                //const dSq = dx * dx + dy * dy + dz * dz;
+                const dSq = dx * dx + dz * dz;
+                //console.log(p.playerName, "dist:", Math.sqrt(dSq), `(dx, dy, dz) = (${dx.toFixed(3)}, ${dy.toFixed(3)}, ${dz.toFixed(3)})`);
+                if (dSq < minDistSq) {
+                    minDistSq = dSq;
+                    closestPlayer = p;
+                    closestPlayerID = pId;
+                }
+            }
+    
+    
+            if (closestPlayer) {
+                if (!bot.isCalculating && (Date.now() - (bot.lastPathUpdate || 0) > PATH_TICK_RATE)) {
+                    bot.isCalculating = true;
+    
+                    // 2. Run the task in the pool
+                    calcBotPath(id, bot, closestPlayer);
+                }
+    
+                moveBot(id, dt, bot, closestPlayer, closestPlayerID, minDistSq);
             }
         }
-
-
-        if (closestPlayer) {
-            if (!bot.isCalculating && (Date.now() - (bot.lastPathUpdate || 0) > PATH_TICK_RATE)) {
-                bot.isCalculating = true;
-
-                // 2. Run the task in the pool
-                calcBotPath(id, bot, closestPlayer);
-            }
-
-            moveBot(id, dt, bot, closestPlayer, closestPlayerID, minDistSq);
-        }
-    }
-}, 1000 / 20);
-
-setInterval(() => {
-    io.emit("nextbotsUpdate", nextbots);
-}, 1000 / 60);
+    }, 1000 / 20);
+    
+    setInterval(() => {
+        io.emit("nextbotsUpdate", nextbots);
+        io.emit("updateScores", { hostPlayerID: hostPlayerID, players: players });
+    }, 1000 / 60);
+}
 
 
 async function calcBotPath(id, bot, player) {
@@ -294,11 +462,26 @@ function moveBot(id, dt, bot, closestPlayer, closestPlayerID, minDistSq) {
 
     // 5. JUMPSCARE TRIGGER
     if (minDistSq < (CONSTS.NEXTBOT_KILL_DISTANCE ** 2)) {
-        io.to(closestPlayerID).emit("jumpscare", { botID: id, bot: bot });
+        closestPlayer.killed++;
+
+        io.to(closestPlayerID).emit("jumpscare", {
+            botID: id,
+            bot: bot,
+            respawnDelay: 5, // 5 second countdown
+            spawnPoint: { x: 0, y: 5, z: 0 } // Your school's spawn location
+        });
         // Reset bot or handle death logic
 
-        bot.x = 0;
-        bot.z = 0;
+        //bot.x = 0;
+        //bot.z = 0;
+        closestPlayer.status = "ELIMINATED";
+        closestPlayer.invincible = true;
+        //p.score = Math.max(0, p.score - 5); // Optional: Penalty for dying
+
+
+        bot.x = UTILS.randRange(-200, 200);
+        bot.y = CONSTS.NEXTBOT_HEIGHT;
+        bot.z = UTILS.randRange(-200, 200);
     }
 }
 

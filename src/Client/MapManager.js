@@ -105,38 +105,11 @@ export class MapManager {
         mesh.traverse((child) => {
             if (!child.isMesh) return;
 
-            let geom = child.geometry.toNonIndexed();
-
-            // 2. Clean up attributes. 
-            // mergeGeometries fails if one mesh has 'uv' and another doesn't.
-            // For a NavMesh, we ONLY care about 'position'.
-            const positionAttr = geom.getAttribute('position');
-            geom = new THREE.BufferGeometry();
-            geom.setAttribute('position', positionAttr);
-
-            // 3. Since you already normalized transforms in Blender, 
-            // you don't need applyMatrix4, but it's safer to keep 
-            // if you ever move objects in the Blender Hierarchy.
-            geometries.push(geom);
+            child.visible = false;
         });
-
-
-        if (geometries.length > 0) {
-            try {
-                const mergedGeometry = BufferGeometryUtils.mergeGeometries(geometries);
-                const zoneData = Pathfinding.createZone(mergedGeometry, 0.5);
-
-                this.pathfinding.setZoneData(this.zone, zoneData);
+        
+        this.scene.add(mesh);
     
-                console.log("NavMesh Groups created:", this.pathfinding.zones[this.zone].groups.length);
-    
-                console.log("NavMesh merged and Pathfinding initialized!");
-            } catch (e) {
-                console.error("Merge failed:", e);
-            }
-        }
-        else
-            console.log("watdefok no navmesh!!");
     }
 
 

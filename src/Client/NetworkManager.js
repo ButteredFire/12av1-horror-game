@@ -75,6 +75,13 @@ export class NetworkManager {
     }
 
 
+    sendStartCommand() {
+        if (this.socket) {
+            this.socket.emit("startGame");
+        }
+    }
+
+
     addEvent(eventName, callback) {
         this.socket.on(eventName, callback);
     }

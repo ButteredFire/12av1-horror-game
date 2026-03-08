@@ -11,6 +11,7 @@ import { MapManager } from "./MapManager";
 
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader";
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader";
+import { CSS2DRenderer, CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 
 
 export class Engine {
@@ -27,6 +28,8 @@ export class Engine {
     async start() {
         const loading = document.getElementById("loading-overlay");
         loading.style.display = "flex";
+
+        this.isHost = false;
 
         await RAPIER.init();
         await this.init();
@@ -69,8 +72,6 @@ export class Engine {
         this.loop = this.loop.bind(this);   // NOTE: This binds the loop so `this` remains the Engine instance
 
         this.posTelemetry = document.getElementById("player-pos");
-
-        this.mapManager.toggleDebugColliders(true, false);
     }
 
 
@@ -91,6 +92,14 @@ export class Engine {
         // Audio
         this.listener = new THREE.AudioListener();
         this.camera.add(this.listener);
+
+
+        this.labelRenderer = new CSS2DRenderer();
+        this.labelRenderer.setSize(window.innerWidth, window.innerHeight);
+        this.labelRenderer.domElement.style.position = 'absolute';
+        this.labelRenderer.domElement.style.top = '0px';
+        this.labelRenderer.domElement.style.pointerEvents = 'none'; // Critical: allows clicking through labels
+        document.body.appendChild(this.labelRenderer.domElement);
     }
 
 
@@ -173,7 +182,15 @@ export class Engine {
             autoplay: false,
             loop: false,
             rate: 1.0,
-            volume: 0.15
+            volume: 0.25
+        });
+
+        this.mockSound = new Howl({
+            src: "/sfx/laughing-cat.mp3",
+            autoplay: false,
+            loop: false,
+            rate: 1.0,
+            volume: 0.25
         });
     }
 
@@ -181,9 +198,17 @@ export class Engine {
     initNetworking() {
         this.network.initSocket();
 
+        
+        this.network.addEvent("assignHost", () => {
+            this.isHost = true;
+            this.setupHost();
+        });
+
 
         // GLOBAL EVENTS
         this.network.addEvent("init", (data) => {
+            this.isHost = data.isHost;
+
             // Retrieve world information on player join
             this.playerName = data.playerName;
             this.network.playerName = this.playerName;
@@ -196,14 +221,13 @@ export class Engine {
                 // Render other players
             for (const id in data.players) {
                 if (id !== this.network.playerID)
-                    this.entityManager.addRemotePlayer(id, data.players[id]);
+                    this.entityManager.addRemotePlayer(this.isHost, id, data.players[id]);
             }
 
             console.log(this.entityManager.playerData);
         });
 
         this.network.addEvent("newPlayer", (data) => {
-            console.log(data);
             this.entityManager.addRemotePlayer(data.id, data.playerData);
         });
         
@@ -223,6 +247,34 @@ export class Engine {
 
 
 
+        this.network.addEvent("lobbyStatus", (data) => {
+            const lobbyUI = document.getElementById("lobby-ui");
+            lobbyUI.style.display = "flex";
+            if (!data.isHost) {
+                this.setupPlayer();
+            }
+        });
+        
+        this.network.addEvent("gameStarted", (data) => {
+            document.getElementById("lobby-ui").style.display = "none";
+            this.entityManager.spawnCoinsFromServer(data.coins);
+        });
+        
+        this.network.addEvent("coinCollected", (data) => {
+            this.entityManager.removeCoin(data.coinId);
+            if (data.playerId === this.network.playerID) {
+                // Update a score element if you have one
+                document.title = `Score: ${data.score}`;
+            }
+        });
+
+
+        this.network.addEvent("updateScores", (playerList) => {
+            this.refreshLeaderboards(playerList);
+        });
+
+
+
         // PLAYER-SPECIFIC EVENTS
         this.alive = true;
 
@@ -230,9 +282,201 @@ export class Engine {
             if (this.alive) {
                 this.alive = false;
                 this.triggerJumpscare(data.bot.type);
-                this.alive = true;
+                //this.alive = true;
+
+
+                const overlay = document.getElementById("death-countdown-overlay");
+                const timerNum = document.getElementById("death-timer-num");
+                
+                overlay.style.display = "flex";
+                let timeLeft = data.respawnDelay;
+
+                // 1. "Gray-out" the world
+                this.renderer.domElement.style.filter = "grayscale(1) brightness(0.7)";
+
+                const sfxIntv = setInterval(() => {
+                    this.mockSound.play();
+                    clearInterval(sfxIntv);
+                }, 1000);
+
+                const interval = setInterval(() => {
+                    timeLeft--;
+                    timerNum.innerText = timeLeft;
+
+                    if (timeLeft <= 0) {
+                        clearInterval(interval);
+                        overlay.style.display = "none";
+                        this.renderer.domElement.style.filter = "none";
+                        
+                        this.controls.resetPlayer();
+                        
+                        // 3. Notify server we are back in action
+                        this.network.socket.emit("playerRespawned");
+
+                        this.alive = true;
+                    }
+                }, 1000);
             }
         });
+
+
+        this.network.addEvent("timerUpdate", (seconds) => {
+            this.updateTimerUI(seconds);
+        });
+        
+        this.network.addEvent("gameOver", (results) => {
+            this.showEndScreen(results);
+        });
+    }
+
+
+    setupHost() {
+        // 1. Disable normal controls
+        if (this.controls) this.controls.enabled = false;
+        
+        // 2. Position camera high above the school
+        this.camera.position.set(0, 70, 0); 
+        this.camera.lookAt(0, 0, 0);
+
+        document.getElementById("host-tactical-hud").style.display = "block";
+        document.getElementById("player-hud").style.display = "none";
+    
+        // 3. Show the Host Start Button
+        const startBtn = document.getElementById("host-start-btn");
+        startBtn.style.display = "block";
+
+        startBtn.addEventListener("click", () => {
+            this.network.sendStartCommand();
+        });
+
+
+        // 1. DISABLE FOG for the Host
+        this.scene.fog = null;
+
+        // 2. NIGHT VISION: Add a global Ambient Light that only the host sees
+        // In Three.js, you can't easily restrict light to one camera, 
+        // so we just crank up the global brightness and turn off the "Darkness" overlay.
+        const nightVision = new THREE.AmbientLight(0xffffff, 1.5); 
+        this.scene.add(nightVision);
+
+        // 3. TOP-DOWN CAMERA
+        this.camera.position.set(0, 200, 0); // High altitude
+        this.camera.lookAt(0, 0, 0);
+        this.camera.up.set(0, 0, -1); // Fix orientation for top-down
+
+        // 4. DISABLE PLAYER CONTROLS
+        if (this.controls) this.controls.enabled = false;
+
+        // 1. Kill the Fog
+        this.scene.fog = null;
+
+        // 2. Kill the Darkness (Flashlight and dark AmbientLight)
+        this.scene.traverse((child) => {
+            if (child instanceof THREE.AmbientLight || child instanceof THREE.DirectionalLight) {
+                child.intensity = 2.0; // High brightness
+            }
+        });
+
+        // 4. Night Vision Tint
+        // You can add a subtle green overlay in CSS or a Three.js ColorTransform
+        document.body.style.filter = "contrast(1.2) brightness(1.1) sepia(0.5) hue-rotate(80deg)";
+
+        // 5. SHOW UI
+        document.getElementById("host-hud").style.display = "block";
+
+
+        this.isDragging = false;
+        this.previousMousePosition = { x: 0, y: 0 };
+
+        window.addEventListener('mousedown', () => this.isDragging = true);
+        window.addEventListener('mouseup', () => this.isDragging = false);
+        window.addEventListener('mousemove', (e) => {
+            if (!this.isDragging || !this.isHost) return;
+
+            const deltaX = e.clientX - this.previousMousePosition.x;
+            const deltaY = e.clientY - this.previousMousePosition.y;
+
+            // Move camera horizontally based on drag
+            // Sensitivity 0.1 works well for 100m height
+            this.camera.position.x -= deltaX * 0.2;
+            this.camera.position.z -= deltaY * 0.2;
+
+            this.previousMousePosition = { x: e.clientX, y: e.clientY };
+        });
+    }
+
+
+    setupPlayer() {
+        this.controls.init();
+
+        document.getElementById("player-hud").style.display = "block";
+    }
+
+
+    updateTimerUI(seconds) {
+        const mins = Math.floor(seconds / 60);
+        const secs = seconds % 60;
+        const timeStr = `${mins}:${secs.toString().padStart(2, '0')}`;
+        
+        // Update the timer element (add this to your HTML)
+        const timerEl = document.getElementById("timer-display");
+        if (timerEl) {
+            timerEl.innerText = timeStr;
+            // Turn red if under 30 seconds
+            if (seconds < 30) timerEl.style.color = "#ff0000";
+        }
+    }
+    
+    showEndScreen(results) {
+        // 1. Stop the game loop
+        this.running = false; 
+
+        this.scene.clear();
+
+        
+        // 2. Show the overlay
+        const endOverlay = document.getElementById("end-screen");
+        const list = document.getElementById("final-scores");
+        endOverlay.style.display = "flex";
+
+        const res = Object.values(results.players).sort((a, b) => (b.score || 0) - (a.score || 0));
+
+        console.log(res);
+    
+        // 3. Populate results
+        list.innerHTML = res.map((p, i) => `
+            <div style="margin-bottom:5px;">
+                [${i+1}] ${p.playerName}: 
+                <span style="float:right">${p.score || 0} Pts. | ${p.killed || 0} Deaths</span>
+            </div>
+        `).join('');
+    }
+
+
+    refreshLeaderboards(playerList) {
+        const activePlayers = playerList.players;
+        delete activePlayers[playerList.hostPlayerID];
+        
+        // Sort all players by score descending
+        const sorted = Object.values(activePlayers).sort((a, b) => (b.score || 0) - (a.score || 0));
+    
+        if (this.isHost) {
+            // FULL LIST for the Host
+            const container = document.getElementById("host-leaderboard-full");
+            container.innerHTML = sorted.map((p, i) => 
+            `<div style="margin-bottom:5px;">
+                    [${i+1}] ${p.playerName.substring(0,30).toUpperCase()}: 
+                    <span style="float:right">${p.score || 0} Pts. | ${p.killed || 0} Deaths</span>
+                </div>`
+            ).join('');
+        } else {
+            // TOP 3 for the Players
+            const container = document.getElementById("player-leaderboard-mini");
+            const top3 = sorted.slice(0, 3);
+            container.innerHTML = top3.map((p, i) => 
+                `<div style="font-size:14px;">${i+1}. ${p.playerName}: ${p.score || 0} Pts. | ${p.killed || 0} 💀</div>`
+            ).join('');
+        }
     }
 
 
@@ -284,11 +528,18 @@ export class Engine {
         
         this.update(dt);
         
+        
         this.renderer.render(this.scene, this.camera);
+
+        if (this.isHost && this.labelRenderer) {
+            this.labelRenderer.render(this.scene, this.camera);
+        }
     }
 
 
     update(dt) {
+        if (this.isHost) return;
+
         this.world.step();
 
         //this.updateDebug();
@@ -299,6 +550,7 @@ export class Engine {
 
         this.controls.update(dt);
         this.entityManager.update(dt);
+        this.entityManager.checkCoinCollisions(this.camera.position, this.network.socket);
 
         this.updatePlayer(dt);
         this.updateUI();

@@ -23,6 +23,8 @@ export class EntityManager {
         this.mannequinTemplate = null;
         this.mannequin = null;
         this.cnt = 0;
+        
+        this.localCoins = new Map();
     }
 
 
@@ -139,7 +141,29 @@ export class EntityManager {
     }
 
 
-    addRemotePlayer(id, data) {
+    createPlayerLabel(isHost, player, name) {
+        const div = document.createElement('div');
+        div.className = 'player-label';
+        div.textContent = name;
+        div.style.color = '#0f0'; // Tactical Green
+        div.style.fontFamily = 'monospace';
+        div.style.fontSize = '24px';
+        div.style.padding = '2px 10px';
+        div.style.background = 'rgba(0, 50, 0, 0.8)';
+        div.style.border = '1px solid #0f0';
+    
+        const label = new CSS2DObject(div);
+        label.position.set(0, 90, 0);
+        player.mesh.add(label);
+
+        label.visible = this.isHost;
+    }
+
+
+    addRemotePlayer(isHost, id, data) {
+        if (!data.isHost)
+            return;
+
         if (!this.mannequinTemplate) {
             console.error("PROGRAMMER ERROR: Mannequin asset has not finished loading yet!");
             return;
@@ -173,6 +197,8 @@ export class EntityManager {
             //targetRot: data.ry || 0
             targetRot: data.ry
         });
+
+        this.createPlayerLabel(isHost, this.remotePlayers.get(id), data.playerName || "Ragamuffin");
 
         this.updateRemotePlayer(id, data);
     }
@@ -211,8 +237,6 @@ export class EntityManager {
                 this.spawnNextbot(id, data);
             } else {
                 const bot = this.nextbots.get(id);
-
-                console.log(id, ": ", data.currentPath);
 
                 bot.targetPos.set(data.x, data.y, data.z);
                 //bot.sprite.position.lerp(new THREE.Vector3(data.x, data.y, data.z), CONSTS.LERP_FACTOR);
@@ -293,17 +317,36 @@ export class EntityManager {
     }
 
 
-    spawnCoins(count) {
-        const loader = new THREE.TextureLoader();
-        const coinTex = loader.load("/coin.png");
-        const coinMat = new THREE.SpriteMaterial({ map: coinTex });
+    // Replace/Update in EntityManager.js
+    spawnCoinsFromServer(coinData) {
+        const geo = new THREE.SphereGeometry(0.4, 8, 8);
+        const mat = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+        
 
-        for (let i = 0; i < count; i++) {
-            const coin = new THREE.Sprite(coinMat);
-            coin.position.set((Math.random() - 0.5) * 40, 0.5, (Math.random() - 0.5) * 40);
-            this.scene.add(coin);
-            this.coins.push(coin);
+        coinData.forEach(c => {
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.position.set(c.x, c.y, c.z);
+            this.scene.add(mesh);
+            this.localCoins.set(c.id, mesh);
+        });
+    }
+
+    removeCoin(coinId) {
+        const mesh = this.localCoins.get(coinId);
+        if (mesh) {
+            this.scene.remove(mesh);
+            this.localCoins.delete(coinId);
         }
+    }
+
+    // Update your checkCollisions for coins
+    checkCoinCollisions(playerPos, socket) {
+        this.localCoins.forEach((mesh, id) => {
+            if (playerPos.distanceTo(mesh.position) < 3.0) {
+                socket.emit("collectCoin", id);
+                this.removeCoin(id); // Optimistic removal
+            }
+        });
     }
 
 
