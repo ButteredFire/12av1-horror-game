@@ -34,15 +34,15 @@ export class PlayerController {
         this.body = this.world.createRigidBody(bodyDesc);
         
         const colliderDesc = RAPIER.ColliderDesc.capsule(CONSTS.PLAYER_HEIGHT / 2.0, CONSTS.PLAYER_COLLISION_RADIUS);
-        colliderDesc.setFriction(0);     // Set friction to 0 so the player "slides" over geometry instead of catching on it
-        colliderDesc.setRestitution(0);  // Set restitution (bounciness) to 0 to prevent "jitter-bounce"
+        //colliderDesc.setFriction(0);     // Set friction to 0 so the player "slides" over geometry instead of catching on it
+        //colliderDesc.setRestitution(0);  // Set restitution (bounciness) to 0 to prevent "jitter-bounce"
 
         this.collider = this.world.createCollider(colliderDesc, this.body);
 
         // 2. Create the Controller for Stairs/Autostep
         this.controller = this.world.createCharacterController(0.15);
-        this.controller.enableAutostep(0.5, 0.01, true); // (maxStepHeight, minWidth)
-        this.controller.enableSnapToGround(0.3);
+        //this.controller.enableAutostep(0.5, 0.01, true); // (maxStepHeight, minWidth)
+        this.controller.enableSnapToGround(0.1);
 
 
         this.body.setTranslation(this.spawnPos, true);

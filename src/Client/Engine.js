@@ -55,13 +55,14 @@ export class Engine {
 
         this.audioLoader = new THREE.AudioLoader();
 
-        this.network = new NetworkManager(PROD_SERVERS, this.scene, this.playerName);
+        this.network = new NetworkManager(DEV_SERVERS, this.scene, this.playerName);
         this.controls = new PlayerController(this.world, this.camera, this.renderer.domElement);
         this.entityManager = new EntityManager(this.world, this.scene, this.listener, this.texLoader, this.gltfLoader, this.audioLoader);
         this.mapManager = new MapManager(this.world, this.scene, this.gltfLoader);
+        this.controls.init();
 
         await this.entityManager.loadAssets();  // Wait for all assets to load 
-        await this.mapManager.load("/map/SchoolModel.glb"); 
+        await this.mapManager.load("/map/Map.glb"); 
         //await this.mapManager.loadNavMesh("/map/SchoolModel_NAV.glb"); 
         //await this.mapManager.loadNavMesh("/map/school_2_nav.glb"); 
         //await this.mapManager.load("/map/Stairs.glb");
@@ -172,7 +173,7 @@ export class Engine {
 
         // Audio
         this.ambience = new Howl({
-            src: "/sfx/night-ambience.mp3",
+            src: "/sfx/ambience.mp3",
             autoplay: true,
             loop: true
         });
@@ -407,7 +408,7 @@ export class Engine {
 
 
     setupPlayer() {
-        this.controls.init();
+        //this.controls.init();
 
         document.getElementById("player-hud").style.display = "block";
     }

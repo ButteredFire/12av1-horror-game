@@ -161,7 +161,7 @@ export class EntityManager {
 
 
     addRemotePlayer(isHost, id, data) {
-        if (!data.isHost)
+        if (data.isHost)
             return;
 
         if (!this.mannequinTemplate) {

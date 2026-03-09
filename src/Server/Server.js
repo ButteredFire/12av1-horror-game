@@ -35,7 +35,8 @@ let playerCount = 0;
 let nextbots = {};
 
 //const nextbotCount = 0;
-const botTypes = ["jason", "louis", "dyfuku", "an", "viet", "minh", "khoa", "ductrinh", "jerry"];
+//const botTypes = ["jason", "louis", "dyfuku", "an", "viet", "minh", "khoa", "ductrinh", "jerry"];
+const botTypes = ["jason", "minh", "khoa", "jerry"];
 
 for (let bot of botTypes) {
     let sound = "armed-and-dangerous";
@@ -45,9 +46,9 @@ for (let bot of botTypes) {
     if (bot == "jerry")     sound = "oggy-and-the-cockroaches";
 
     nextbots[`${bot}`] = {
-        x: UTILS.randRange(-200, 200),
+        x: UTILS.randRange(-20, 20),
         y: CONSTS.NEXTBOT_HEIGHT,
-        z: UTILS.randRange(-200, 200),
+        z: UTILS.randRange(-20, 20),
         //type: botTypes[randRangeInt(0, botTypes.length - 1)]
         type: bot,
         sound: sound
@@ -65,7 +66,7 @@ const __dirname = path.dirname(__filename);
 
 const ZONE = "school";
 const workerPath = path.resolve(__dirname, "PathfinderWorker.mjs");
-const navPath = path.resolve(__dirname, "../../public/map/SchoolModel_NAV.glb");
+const navPath = path.resolve(__dirname, "../../public/map/Map_NAV.glb");
 
 // Initialize Piscina
 const pathPool = new Piscina({
