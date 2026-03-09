@@ -1,7 +1,7 @@
 import * as THREE from "three";
+import * as UTILS from "../Utils"
 import { CONSTS } from "../Constants";
-import * as UTILS from "../Utils";
-import RAPIER from "@dimforge/rapier3d-compat";
+import { CSS2DObject } from "three/examples/jsm/renderers/CSS2DRenderer";
 
 import { Pathfinding, PathfindingHelper } from 'three-pathfinding';
 
@@ -25,6 +25,16 @@ export class EntityManager {
         this.cnt = 0;
         
         this.localCoins = new Map();
+        this.coinSounds = [];
+        const coinSounds = 6;
+        for (let i = 0; i < coinSounds; i++) {
+            this.coinSounds.push(new Howl({
+                src: `/sfx/coin-sound${i+1}.wav`,
+                autoplay: false,
+                loop: false,
+                volume: 0.75
+            }));
+        }
     }
 
 
@@ -160,7 +170,7 @@ export class EntityManager {
     }
 
 
-    addRemotePlayer(isHost, id, data) {
+    addRemotePlayer(clientIsHost, id, data) {
         if (data.isHost)
             return;
 
@@ -172,24 +182,32 @@ export class EntityManager {
         const group = new THREE.Group();
         const model = this.mannequinTemplate.clone();
         const nameplate = this.createNameplate(data.playerName);
-        const flashlight = new THREE.SpotLight(0xffffff, 10, 30, Math.PI / 4, 0.5, 1);
+        const flashlight = new THREE.SpotLight(0xffffff, 20, 30, Math.PI / 3, 0.5, 1);
 
         flashlight.castShadow = true;
         flashlight.shadow.mapSize.width = 512;
         flashlight.shadow.mapSize.height = 512;
         flashlight.shadow.camera.near = 0.5;
-        flashlight.shadow.camera.far = 25;
-
+        flashlight.shadow.camera.far = 75;
+        
 
         group.add(model);
         group.add(nameplate);
+
+        if (clientIsHost) {
+            const povLight = new THREE.PointLight(0xffffff, 1.0, 10);
+            group.add(povLight);
+        }
+
         group.position.set(data.x, data.y - CONSTS.PLAYER_HEIGHT, data.z);
+
 
         this.scene.add(group);
         this.scene.add(flashlight);
         this.scene.add(flashlight.target);
         
         this.remotePlayers.set(id, {
+            playerName: data.playerName,
             mesh: group,
             flashlight: flashlight,
             targetPos: new THREE.Vector3(data.x, 0, data.z),
@@ -198,7 +216,7 @@ export class EntityManager {
             targetRot: data.ry
         });
 
-        this.createPlayerLabel(isHost, this.remotePlayers.get(id), data.playerName || "Ragamuffin");
+        this.createPlayerLabel(data.isHost, this.remotePlayers.get(id), data.playerName);
 
         this.updateRemotePlayer(id, data);
     }
@@ -224,6 +242,8 @@ export class EntityManager {
         const player = this.remotePlayers.get(id);
         if (player) {
             this.scene.remove(player.mesh);
+            this.scene.remove(player.flashlight);
+
             this.remotePlayers.delete(id);
         }
     }
@@ -345,6 +365,8 @@ export class EntityManager {
             if (playerPos.distanceTo(mesh.position) < 3.0) {
                 socket.emit("collectCoin", id);
                 this.removeCoin(id); // Optimistic removal
+
+                UTILS.randElem(this.coinSounds).play();
             }
         });
     }

@@ -12,18 +12,27 @@ export class PlayerController {
         this.domElement = domElement;
         this.controls = new PointerLockControls(this.camera, document.body);
 
-        this.spawnPos = { x: 0, y: CONSTS.PLAYER_HEIGHT, z: 0 }; // Start 5 meters in the air to avoid stuck-in-floor
+        this.defaultSpawnPos = { x: 0, y: CONSTS.PLAYER_HEIGHT, z: 0 }; // Start 5 meters in the air to avoid stuck-in-floor
+
+        this.playerInitialized = false;
     }
 
 
     init() {
         this.initPlayer();
         this.initControls();
+
+        this.playerInitialized = true;
     }
 
 
-    resetPlayer() {
-        this.body.setTranslation(this.spawnPos, true);
+    teleportPlayer(spawnPos) {
+        this.body.setTranslation({
+            x: spawnPos.x,
+            y: spawnPos.y + CONSTS.PLAYER_HEIGHT,
+            z: spawnPos.z
+        }, true);
+
         this.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
     }
 
@@ -45,7 +54,7 @@ export class PlayerController {
         this.controller.enableSnapToGround(0.1);
 
 
-        this.body.setTranslation(this.spawnPos, true);
+        this.body.setTranslation(this.defaultSpawnPos, true);
     }
 
 

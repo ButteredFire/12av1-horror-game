@@ -11,6 +11,8 @@ export class MapManager {
         this.scene = scene;
         this.gltfLoader = gltfLoader;
 
+        this.xrayGeom = [];
+
         this.pathfinding = new Pathfinding();
         this.pathfindingHelper = new PathfindingHelper();
         this.scene.add(this.pathfindingHelper);
@@ -61,6 +63,7 @@ export class MapManager {
 
                 const isCollider = child.name.includes("UCX");
                 const isNavmesh = child.name.includes("NAV");
+                const isXray = child.name.includes("XR");
                 if (isCollider || isNavmesh) {
                     child.visible = false;
 
@@ -70,6 +73,10 @@ export class MapManager {
                             color: 0xff0000,
                             wireframe: true
                         });
+                    }
+
+                    if (isXray) {
+                        this.xrayGeom.push(child);
                     }
                 }
 
@@ -136,5 +143,13 @@ export class MapManager {
         //    if (mesh.material)
         //        mesh.material = wireMat;
         //});
+    }
+
+
+    hideXrayGeometry() {
+        this.xrayGeom.forEach(geom => {
+            console.log(geom.name);
+            geom.material.transparent = true;
+        });
     }
 }

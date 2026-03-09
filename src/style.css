@@ -140,25 +140,11 @@ html, body {
   }
 }
 
-
-#jumpscare-overlay.trigger {
-  animation: fade-out-seq 1s forwards;
-}
-@keyframes fade-out-seq {
-  0% { display: flex; opacity: 1; }
-  100% { display: none; opacity: 0; }
-}
-
 #jumpscare-overlay.hidden {
   opacity: 0;
   /* Optional: set display to none after the transition for layout purposes */
   visibility: hidden;
   transition: none;
-}
-
-.fade-out {
-  opacity: 0;
-  transition: opacity 1s ease-in;
 }
 
 
@@ -180,4 +166,15 @@ html, body {
   align-items: center;
   justify-content: center;
   text-align: center;
+}
+
+
+#death-countdown-overlay.trigger {
+  animation: countdown-fade-in 1s forwards;
+}
+
+@keyframes countdown-fade-in {
+  0% { opacity: 0; }
+  50% { opacity: 0; }
+  100% { opacity: 1; }
 }

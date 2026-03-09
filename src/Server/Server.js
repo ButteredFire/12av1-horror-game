@@ -29,34 +29,6 @@ const io = new Server(httpServer, {
     }
 });
 
-let players = {};
-let playerCount = 0;
-
-let nextbots = {};
-
-//const nextbotCount = 0;
-//const botTypes = ["jason", "louis", "dyfuku", "an", "viet", "minh", "khoa", "ductrinh", "jerry"];
-const botTypes = ["jason", "minh", "khoa", "jerry"];
-
-for (let bot of botTypes) {
-    let sound = "armed-and-dangerous";
-
-    if (bot == "minh")      sound = "thick-of-it";
-    if (bot == "louis")     sound = "man-united";
-    if (bot == "jerry")     sound = "oggy-and-the-cockroaches";
-
-    nextbots[`${bot}`] = {
-        x: UTILS.randRange(-20, 20),
-        y: CONSTS.NEXTBOT_HEIGHT,
-        z: UTILS.randRange(-20, 20),
-        //type: botTypes[randRangeInt(0, botTypes.length - 1)]
-        type: bot,
-        sound: sound
-    };
-}
-
-
-
 
 
 import Piscina from 'piscina';
@@ -66,7 +38,7 @@ const __dirname = path.dirname(__filename);
 
 const ZONE = "school";
 const workerPath = path.resolve(__dirname, "PathfinderWorker.mjs");
-const navPath = path.resolve(__dirname, "../../public/map/Map_NAV.glb");
+const navPath = path.resolve(__dirname, "../../public/map/Backrooms_NAV.glb");
 
 // Initialize Piscina
 const pathPool = new Piscina({
@@ -76,7 +48,6 @@ const pathPool = new Piscina({
         navPath: navPath // Just pass the string path!
     }
 });
-
 
 
 
@@ -112,99 +83,58 @@ loader.parse(arrayBuffer, '', (gltf) => {
 
 
 
+let players = {};
+let playerCount = 0;
+
+let nextbots = {};
 
 let coins = [];
-
-/*
-function spawnCoinsOnNavMesh() {
-    coins = [];
-    const zone = pathfinding.zones[ZONE]; 
-    if (!zone) return console.error("NavMesh not loaded for spawning!");
-    
-    const triangles = zone.groups[0]; 
-    for (let i = 0; i < 40; i++) { // Reveal-ready count
-        const tri = triangles[Math.floor(Math.random() * triangles.length)];
-        coins.push({
-            id: i,
-            x: tri.centroid.x,
-            y: tri.centroid.y + 0.5, 
-            z: tri.centroid.z,
-            collected: false
-        });
-    }
-}
-*/
-function spawnCoinsOnNavMesh() {
-    coins = [];
-    const zone = pathfinding.zones['school'];
-    const triangles = [...zone.groups[0]]; // Clone triangle array
-    const MIN_DISTANCE = 8; // Meters between coins
-
-    // Shuffle triangles to ensure variety
-    for (let i = triangles.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [triangles[i], triangles[j]] = [triangles[j], triangles[i]];
-    }
-
-    for (const tri of triangles) {
-        if (coins.length >= 200) break;
-
-        const pos = { x: tri.centroid.x, y: tri.centroid.y + 0.8, z: tri.centroid.z };
-        
-        // Check if this position is too close to any existing coin
-        const tooClose = coins.some(c => 
-            Math.sqrt((c.x - pos.x)**2 + (c.z - pos.z)**2) < MIN_DISTANCE
-        );
-
-        if (!tooClose) {
-            coins.push({ id: coins.length, ...pos, collected: false });
-        }
-    }
-    return coins;
-}
-
-
-
 
 let gameState = "LOBBY"; 
 let hostPlayerID = null;
 
-let gameTimer = 60 * 3;
+const gameTimer = 60 * 5;
 let timerInterval;
 let aiInterval;
 
 io.on("connection", (socket) => {
 
-    const playerName = socket.handshake.query.playerName || `Ragamuffin #${playerCount + 1}`;
+    const playerName = socket.handshake.query.playerName || `Ragamuffin #${playerCount++}`;
     let isHost = false;
     if (playerName === "MDTCO") {
         isHost = true;
         hostPlayerID = socket.id;
+
         socket.emit("assignHost");
     }
     
-    console.log("NEW CONNECTION RECEIVED", (isHost ? "(HOST)" : ""));
+    console.log(`NEW CONNECTION RECEIVED: ${playerName} `, (isHost ? "(HOST)" : ""));
 
+
+    const spawnPos = getRandomNavMeshPosition(ZONE, 0);
     players[socket.id] = {
         isHost: isHost,
         playerName: playerName,
-        x: 0,
-        y: 0,
-        z: 0,
+        x: spawnPos.x,
+        y: spawnPos.y,
+        z: spawnPos.z,
         ry: 0,
         chased: false,
         invincible: false,
+        score: 0,
         killed: 0
     };
-    playerCount++;
+    
 
     // Send the current world state to the new player
     socket.emit("init", {
-        isHost: isHost,
+        isHost: players[socket.id].isHost,
         playerName: playerName,     // Also pass in player name in case the client sends and keeps an empty name
         id: socket.id,
         players: players,
-        nextbots: nextbots
+        nextbots: nextbots,
+        gameState: gameState,
+        coins: coins
     });
 
     // Inform others
@@ -236,16 +166,14 @@ io.on("connection", (socket) => {
 
 
     // Send lobby status immediately
-    socket.emit("lobbyStatus", { 
-        isHost: players[socket.id].isHost,
-        gameState: gameState 
-    });
+    //socket.emit("lobbyStatus", { 
+    //    isHost: players[socket.id].isHost,
+    //    gameState: gameState
+    //});
 
 
     socket.on("startGame", () => {
         if (players[socket.id].isHost && gameState === "LOBBY") {
-            gameState = "PLAYING";
-            spawnCoinsOnNavMesh();
             startGameLoop();
             startAILoop();
             io.emit("gameStarted", { coins });
@@ -266,18 +194,26 @@ io.on("connection", (socket) => {
     });
 
     socket.on("playerRespawned", () => {
-        players[socket.id].invincible = false;
+        if (players[socket.id])
+            players[socket.id].invincible = false;
     });
 });
 
 
 
 function startGameLoop() {
-    timerInterval = setInterval(() => {
-        gameTimer--;
-        io.emit("timerUpdate", gameTimer);
+    gameState = "PLAYING";
 
-        if (gameTimer <= 0) {
+    spawnCoinsOnNavMesh(ZONE);
+    spawnBots();
+    spawnBots(); // twice
+
+    let timer = gameTimer;
+    timerInterval = setInterval(() => {
+        timer--;
+        io.emit("timerUpdate", timer);
+
+        if (timer <= 0) {
             endGame();
         }
     }, 1000);
@@ -289,13 +225,97 @@ function endGame() {
     clearInterval(timerInterval);
     clearInterval(aiInterval);
 
-    gameState = "ENDED";
-    
-    // Sort players by score for the final reveal
-    delete players[hostPlayerID];
+    gameState = "LOBBY";
+
+    const allPlayers = players;
+
+    players = {}
+    nextbots = {}
+    coins = []
+
+    playerCount = 0;
 
     
-    io.emit("gameOver", {players: players});
+    // Sort players by score for the final reveal
+    delete allPlayers[hostPlayerID];
+    io.emit("gameOver", {players: allPlayers});
+}
+
+
+function spawnCoinsOnNavMesh(zoneName, groupID = 0) {
+    coins = [];
+    const zone = pathfinding.zones[zoneName];
+    const triangles = [...zone.groups[groupID]]; // Clone triangle array
+    const MIN_DISTANCE = 8; // Meters between coins
+
+    // Shuffle triangles to ensure variety
+    for (let i = triangles.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [triangles[i], triangles[j]] = [triangles[j], triangles[i]];
+    }
+
+    for (const tri of triangles) {
+        if (coins.length >= 200) break;
+
+        const pos = { x: tri.centroid.x, y: tri.centroid.y + 0.8, z: tri.centroid.z };
+        
+        // Check if this position is too close to any existing coin
+        const tooClose = coins.some(c => 
+            Math.sqrt((c.x - pos.x)**2 + (c.z - pos.z)**2) < MIN_DISTANCE
+        );
+
+        if (!tooClose) {
+            coins.push({ id: coins.length, ...pos, collected: false });
+        }
+    }
+    return coins;
+}
+
+
+function spawnBots() {
+    const botTypes = ["jason", "louis", "dyfuku", "an", "viet", "minh", "khoa", "ductrinh", "jerry"];
+    //const botTypes = ["jason", "minh", "khoa", "jerry"];
+
+    for (let bot of botTypes) {
+        let sound = "armed-and-dangerous";
+
+        if (bot == "minh")      sound = "thick-of-it";
+        if (bot == "louis")     sound = "man-united";
+        if (bot == "jerry")     sound = "oggy-and-the-cockroaches";
+
+        const botPos = getRandomNavMeshPosition(ZONE, 0);
+
+        nextbots[`${nextbots.length}_${bot}`] = {
+            x: botPos.x,
+            y: botPos.y + CONSTS.NEXTBOT_HEIGHT,
+            z: botPos.z,
+            //type: botTypes[randRangeInt(0, botTypes.length - 1)]
+            type: bot,
+            sound: sound
+        };
+
+        console.log(`[GAME] Spawned nextbot "${bot}" at (${botPos.x.toFixed(3)}, ${botPos.y.toFixed(3)}, ${botPos.z.toFixed(3)})`)
+    }
+}
+
+
+function getRandomNavMeshPosition(zoneName, groupID = 0) {
+    const zone = pathfinding.zones[zoneName];
+    if (!zone || !zone.groups[groupID]) {
+        console.error("NavMesh zone not loaded.");
+        return { x: 0, y: 0, z: 0 }; // Fallback
+    }
+
+    const triangles = zone.groups[groupID];
+    // Pick a random triangle from the array
+    const randomTriangle = triangles[Math.floor(Math.random() * triangles.length)];
+    
+    // Return the centroid (center of the triangle)
+    return {
+        x: randomTriangle.centroid.x,
+        y: randomTriangle.centroid.y,
+        z: randomTriangle.centroid.z
+    };
 }
 
 
@@ -465,11 +485,14 @@ function moveBot(id, dt, bot, closestPlayer, closestPlayerID, minDistSq) {
     if (minDistSq < (CONSTS.NEXTBOT_KILL_DISTANCE ** 2)) {
         closestPlayer.killed++;
 
+        const playerRespawnPt = getRandomNavMeshPosition(ZONE, 0);
+        const botRespawnPt = getRandomNavMeshPosition(ZONE, 0);
+
         io.to(closestPlayerID).emit("jumpscare", {
             botID: id,
             bot: bot,
-            respawnDelay: 5, // 5 second countdown
-            spawnPoint: { x: 0, y: 5, z: 0 } // Your school's spawn location
+            respawnDelay: 5,
+            respawnPoint: playerRespawnPt
         });
         // Reset bot or handle death logic
 
@@ -477,12 +500,11 @@ function moveBot(id, dt, bot, closestPlayer, closestPlayerID, minDistSq) {
         //bot.z = 0;
         closestPlayer.status = "ELIMINATED";
         closestPlayer.invincible = true;
-        //p.score = Math.max(0, p.score - 5); // Optional: Penalty for dying
 
 
-        bot.x = UTILS.randRange(-200, 200);
-        bot.y = CONSTS.NEXTBOT_HEIGHT;
-        bot.z = UTILS.randRange(-200, 200);
+        bot.x = botRespawnPt.x;
+        bot.y = botRespawnPt.y + CONSTS.NEXTBOT_HEIGHT;
+        bot.z = botRespawnPt.z;
     }
 }
 

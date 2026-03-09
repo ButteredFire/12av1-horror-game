@@ -55,14 +55,16 @@ export class Engine {
 
         this.audioLoader = new THREE.AudioLoader();
 
-        this.network = new NetworkManager(PROD_SERVERS, this.scene, this.playerName);
+        this.network = new NetworkManager(DEV_SERVERS, this.scene, this.playerName);
         this.controls = new PlayerController(this.world, this.camera, this.renderer.domElement);
         this.entityManager = new EntityManager(this.world, this.scene, this.listener, this.texLoader, this.gltfLoader, this.audioLoader);
         this.mapManager = new MapManager(this.world, this.scene, this.gltfLoader);
+
         this.controls.init();
+        this.playerStartPos = this.controls.defaultSpawnPos;
 
         await this.entityManager.loadAssets();  // Wait for all assets to load 
-        await this.mapManager.load("/map/Map.glb"); 
+        await this.mapManager.load("/map/Backrooms.glb"); 
         //await this.mapManager.loadNavMesh("/map/SchoolModel_NAV.glb"); 
         //await this.mapManager.loadNavMesh("/map/school_2_nav.glb"); 
         //await this.mapManager.load("/map/Stairs.glb");
@@ -93,14 +95,6 @@ export class Engine {
         // Audio
         this.listener = new THREE.AudioListener();
         this.camera.add(this.listener);
-
-
-        this.labelRenderer = new CSS2DRenderer();
-        this.labelRenderer.setSize(window.innerWidth, window.innerHeight);
-        this.labelRenderer.domElement.style.position = 'absolute';
-        this.labelRenderer.domElement.style.top = '0px';
-        this.labelRenderer.domElement.style.pointerEvents = 'none'; // Critical: allows clicking through labels
-        document.body.appendChild(this.labelRenderer.domElement);
     }
 
 
@@ -151,14 +145,14 @@ export class Engine {
         
         
         // Flashlight
-        this.flashlight = new THREE.SpotLight(0xffffff, 10, 30, Math.PI / 4, 0.5, 1);
+        this.flashlight = new THREE.SpotLight(0xffffff, 20, 30, Math.PI / 3, 0.5, 1);
         this.flashlight.castShadow = true;
 
             // Shadow settings for mobile optimization
         this.flashlight.shadow.mapSize.width = 512;
         this.flashlight.shadow.mapSize.height = 512;
         this.flashlight.shadow.camera.near = 0.5;
-        this.flashlight.shadow.camera.far = 25;
+        this.flashlight.shadow.camera.far = 75;
 
         this.scene.add(this.flashlight);
         this.scene.add(this.flashlight.target);
@@ -174,7 +168,13 @@ export class Engine {
         // Audio
         this.ambience = new Howl({
             src: "/sfx/ambience.mp3",
-            autoplay: true,
+            autoplay: false,
+            loop: true
+        });
+
+        this.hostMusic = new Howl({
+            src: "/sfx/host-music.mp3",
+            autoplay: false,
             loop: true
         });
 
@@ -182,16 +182,22 @@ export class Engine {
             src: "/sfx/lobotomy.mp3",
             autoplay: false,
             loop: false,
-            rate: 1.0,
-            volume: 0.25
+            volume: 1.0
         });
 
         this.mockSound = new Howl({
             src: "/sfx/laughing-cat.mp3",
             autoplay: false,
             loop: false,
-            rate: 1.0,
-            volume: 0.25
+            volume: 1.25
+        });
+
+
+        this.victory = new Howl({
+            src: "/sfx/victory.mp3",
+            autoplay: false,
+            loop: false,
+            volume: 1.0
         });
     }
 
@@ -199,16 +205,42 @@ export class Engine {
     initNetworking() {
         this.network.initSocket();
 
-        
+        // HOST
         this.network.addEvent("assignHost", () => {
-            this.isHost = true;
-            this.setupHost();
+            this.labelRenderer = new CSS2DRenderer();
+            this.labelRenderer.setSize(window.innerWidth, window.innerHeight);
+            this.labelRenderer.domElement.style.position = 'absolute';
+            this.labelRenderer.domElement.style.top = '0px';
+            //this.labelRenderer.domElement.style.pointerEvents = 'none'; // Critical: allows clicking through labels
+            document.body.appendChild(this.labelRenderer.domElement);
+
+            const pipContainer = document.getElementById("pip-container");
+            const pipWidth = (pipContainer.style.width * window.innerWidth) / 100;
+            const pipHeight = (pipContainer.style.height * window.innerHeight) / 100;
+
+            this.pipRenderer = new THREE.WebGLRenderer({ antialias: false }); // Low res for perf
+            this.pipRenderer.setSize(pipWidth, pipHeight);
+            this.pipRenderer.setClearColor(0x111111);
+
+            pipContainer.appendChild(this.pipRenderer.domElement);
+            pipContainer.style.display = "block";
+        
+            this.pipCamera = new THREE.PerspectiveCamera(75, pipWidth / pipHeight, 0.1, 1000);
+
+            this.currentPipTargetId = null;
+            this.pipCycleInterval = 1000; // 10 seconds per player
+
+            setInterval(() => {
+                this.cyclePipTarget();
+            }, this.pipCycleInterval);
         });
 
 
         // GLOBAL EVENTS
         this.network.addEvent("init", (data) => {
             this.isHost = data.isHost;
+            document.getElementById("player-name").innerHTML = data.playerName;
+
 
             // Retrieve world information on player join
             this.playerName = data.playerName;
@@ -216,20 +248,45 @@ export class Engine {
 
             this.entityManager.reset();
 
-            console.log("Reconnected");
-            console.log(data);
-
                 // Render other players
             for (const id in data.players) {
                 if (id !== this.network.playerID)
                     this.entityManager.addRemotePlayer(this.isHost, id, data.players[id]);
             }
 
-            console.log(this.entityManager.playerData);
+
+            const lobbyUI = document.getElementById("lobby-ui");
+            if (data.gameState === "LOBBY") {
+                lobbyUI.style.display = "flex";
+            }
+            else {
+                lobbyUI.style.display = "none";
+
+                if (data.isHost) {
+                    this.hostMusic.play();
+                }
+                else {
+                    this.ambience.play();
+                }
+            }
+
+
+            if (!data.isHost) {
+                this.setupPlayer(data);
+            }
+            else {
+                this.isHost = true;
+                this.setupHost();
+            }
+
+
+            if (data.coins) {
+                this.entityManager.spawnCoinsFromServer(data.coins);
+            }
         });
 
         this.network.addEvent("newPlayer", (data) => {
-            this.entityManager.addRemotePlayer(data.id, data.playerData);
+            this.entityManager.addRemotePlayer(this.isHost, data.id, data.playerData);
         });
         
         this.network.addEvent("playerMoved", (data) => {
@@ -247,30 +304,35 @@ export class Engine {
         });
 
 
-
-        this.network.addEvent("lobbyStatus", (data) => {
-            const lobbyUI = document.getElementById("lobby-ui");
-            lobbyUI.style.display = "flex";
-            if (!data.isHost) {
-                this.setupPlayer();
-            }
-        });
         
         this.network.addEvent("gameStarted", (data) => {
             document.getElementById("lobby-ui").style.display = "none";
+
+            if (!this.isHost) {
+                this.controls.teleportPlayer(this.playerStartPos);
+                this.ambience.play();
+            }
+            else {
+                this.hostMusic.play();
+            }
+            
             this.entityManager.spawnCoinsFromServer(data.coins);
         });
         
         this.network.addEvent("coinCollected", (data) => {
             this.entityManager.removeCoin(data.coinId);
             if (data.playerId === this.network.playerID) {
-                // Update a score element if you have one
                 document.title = `Score: ${data.score}`;
             }
         });
 
 
         this.network.addEvent("updateScores", (playerList) => {
+            if (!this.isHost) {
+                const player = playerList.players[this.network.playerID];
+                document.getElementById("local-coin-count").innerText = player.score || 0;
+            }
+
             this.refreshLeaderboards(playerList);
         });
 
@@ -283,13 +345,19 @@ export class Engine {
             if (this.alive) {
                 this.alive = false;
                 this.triggerJumpscare(data.bot.type);
+
+                this.controls.teleportPlayer({ x: -50, y: -50, z: -50 });
                 //this.alive = true;
 
 
                 const overlay = document.getElementById("death-countdown-overlay");
                 const timerNum = document.getElementById("death-timer-num");
+
+                        // Prepping the overlay
+                overlay.classList.remove("trigger");
+                void overlay.offsetWidth;
+
                 
-                overlay.style.display = "flex";
                 let timeLeft = data.respawnDelay;
 
                 // 1. "Gray-out" the world
@@ -297,6 +365,10 @@ export class Engine {
 
                 const sfxIntv = setInterval(() => {
                     this.mockSound.play();
+
+                    overlay.style.display = "flex";
+                    overlay.classList.add("trigger");
+                    
                     clearInterval(sfxIntv);
                 }, 1000);
 
@@ -309,7 +381,8 @@ export class Engine {
                         overlay.style.display = "none";
                         this.renderer.domElement.style.filter = "none";
                         
-                        this.controls.resetPlayer();
+                        console.log(data.respawnPoint);
+                        this.controls.teleportPlayer(data.respawnPoint);
                         
                         // 3. Notify server we are back in action
                         this.network.socket.emit("playerRespawned");
@@ -328,6 +401,22 @@ export class Engine {
         this.network.addEvent("gameOver", (results) => {
             this.showEndScreen(results);
         });
+
+
+        // Window resizing necessitates updating the camera projection matrix to be compatible with the new screen space
+        window.addEventListener("resize", () => {
+            const width = window.innerWidth;
+            const height = window.innerHeight;
+
+            this.camera.aspect = width / height;
+            this.camera.updateProjectionMatrix();
+
+            this.renderer.setSize(width, height);
+            this.renderer.setPixelRatio(window.devicePixelRatio); // Sharpens display on mobile retina screens
+
+            const root = document.getElementById("root");
+            void root.offsetWidth;
+        });
     }
 
 
@@ -335,12 +424,15 @@ export class Engine {
         // 1. Disable normal controls
         if (this.controls) this.controls.enabled = false;
         
+        this.mapManager.hideXrayGeometry();
+
         // 2. Position camera high above the school
         this.camera.position.set(0, 70, 0); 
         this.camera.lookAt(0, 0, 0);
 
         document.getElementById("host-tactical-hud").style.display = "block";
         document.getElementById("player-hud").style.display = "none";
+        document.getElementById("telemetry").style.display = "none";
     
         // 3. Show the Host Start Button
         const startBtn = document.getElementById("host-start-btn");
@@ -358,23 +450,22 @@ export class Engine {
         // In Three.js, you can't easily restrict light to one camera, 
         // so we just crank up the global brightness and turn off the "Darkness" overlay.
         const nightVision = new THREE.AmbientLight(0xffffff, 1.5); 
-        this.scene.add(nightVision);
+        //this.scene.add(nightVision);
+        this.renderer.setClearColor(0, 1);
 
         // 3. TOP-DOWN CAMERA
-        this.camera.position.set(0, 200, 0); // High altitude
+        this.camera.position.set(0, 100, 0); // High altitude
         this.camera.lookAt(0, 0, 0);
         this.camera.up.set(0, 0, -1); // Fix orientation for top-down
-
-        // 4. DISABLE PLAYER CONTROLS
-        if (this.controls) this.controls.enabled = false;
-
-        // 1. Kill the Fog
-        this.scene.fog = null;
 
         // 2. Kill the Darkness (Flashlight and dark AmbientLight)
         this.scene.traverse((child) => {
             if (child instanceof THREE.AmbientLight || child instanceof THREE.DirectionalLight) {
                 child.intensity = 2.0; // High brightness
+            }
+
+            if (child.name.includes("XR")) {
+                child.visible = false;
             }
         });
 
@@ -407,8 +498,13 @@ export class Engine {
     }
 
 
-    setupPlayer() {
-        //this.controls.init();
+    setupPlayer(data) {
+        const player = data.players[data.id];
+
+        this.playerStartPos = { x: player.x, y: player.y, z: player.z };
+        if (data.gameState !== "LOBBY") {
+            this.controls.teleportPlayer(this.playerStartPos);
+        }
 
         document.getElementById("player-hud").style.display = "block";
     }
@@ -434,6 +530,12 @@ export class Engine {
 
         this.scene.clear();
 
+        this.ambience.stop();
+        this.hostMusic.stop();
+        this.mockSound.stop();
+
+        this.victory.play();
+
         
         // 2. Show the overlay
         const endOverlay = document.getElementById("end-screen");
@@ -448,7 +550,7 @@ export class Engine {
         list.innerHTML = res.map((p, i) => `
             <div style="margin-bottom:5px;">
                 [${i+1}] ${p.playerName}: 
-                <span style="float:right">${p.score || 0} Pts. | ${p.killed || 0} Deaths</span>
+                <span style="float:right">${p.score || 0} 🪙 | ${p.killed || 0} 💀</span>
             </div>
         `).join('');
     }
@@ -466,8 +568,8 @@ export class Engine {
             const container = document.getElementById("host-leaderboard-full");
             container.innerHTML = sorted.map((p, i) => 
             `<div style="margin-bottom:5px;">
-                    [${i+1}] ${p.playerName.substring(0,30).toUpperCase()}: 
-                    <span style="float:right">${p.score || 0} Pts. | ${p.killed || 0} Deaths</span>
+                    #${i+1} | ${p.playerName.substring(0,30).toUpperCase()}
+                    <span style="float:right">${p.score || 0} 🪙 | ${p.killed || 0} 💀</span>
                 </div>`
             ).join('');
         } else {
@@ -475,7 +577,7 @@ export class Engine {
             const container = document.getElementById("player-leaderboard-mini");
             const top3 = sorted.slice(0, 3);
             container.innerHTML = top3.map((p, i) => 
-                `<div style="font-size:14px;">${i+1}. ${p.playerName}: ${p.score || 0} Pts. | ${p.killed || 0} 💀</div>`
+                `<div style="font-size:14px;">#${i+1} | ${p.playerName}: ${p.score || 0} 🪙 | ${p.killed || 0} 💀</div>`
             ).join('');
         }
     }
@@ -499,27 +601,12 @@ export class Engine {
         img.classList.add("trigger-animation");
         setTimeout(() => {
             img.style.display = "none";
-        }, 1500);
+        }, 2500);
     }
 
 
     startLoop() {
         this.loop();
-
-        // Window resizing necessitates updating the camera projection matrix to be compatible with the new screen space
-        window.addEventListener("resize", () => {
-            const width = window.innerWidth;
-            const height = window.innerHeight;
-
-            this.camera.aspect = width / height;
-            this.camera.updateProjectionMatrix();
-
-            this.renderer.setSize(width, height);
-            this.renderer.setPixelRatio(window.devicePixelRatio); // Sharpens display on mobile retina screens
-
-            const root = document.getElementById("root");
-            void root.offsetWidth;
-        });
     }
 
     loop() {
@@ -527,21 +614,28 @@ export class Engine {
         
         const dt = this.timer.getDelta();
         
+        this.world.step();
+        
         this.update(dt);
         
         
         this.renderer.render(this.scene, this.camera);
 
-        if (this.isHost && this.labelRenderer) {
-            this.labelRenderer.render(this.scene, this.camera);
+        if (this.isHost) {
+            if (this.labelRenderer) {
+                this.labelRenderer.render(this.scene, this.camera);
+            }
+                
+            if (this.pipRenderer && this.currentPipTargetId) {
+                this.updatePipCamera();
+                this.pipRenderer.render(this.scene, this.pipCamera);
+            }
         }
     }
 
 
     update(dt) {
         if (this.isHost) return;
-
-        this.world.step();
 
         //this.updateDebug();
         this.mapManager.update(dt, this.camera.position);
@@ -558,6 +652,32 @@ export class Engine {
     }
 
 
+    updatePipCamera() {
+        const players = Array.from(this.entityManager.remotePlayers.values());
+        const target = players[0];
+
+        if (target && target.mesh) {
+            this.pipCamera.position.copy(target.mesh.position);
+            this.pipCamera.quaternion.copy(target.mesh.quaternion);
+        }
+    }
+
+
+    cyclePipTarget() {
+        const players = Array.from(this.entityManager.remotePlayers.keys());
+        if (players.length === 0) return;
+    
+        // Logic: Find the player with the highest score, or just cycle linearly
+        const currentIndex = players.indexOf(this.currentPipTargetId);
+        const nextIndex = (currentIndex + 1) % players.length;
+        
+        this.currentPipTargetId = players[nextIndex];
+        
+        const targetData = this.entityManager.remotePlayers.get(this.currentPipTargetId);
+        document.getElementById("pip-player-name").innerText = `PERSPECTIVE: ${targetData.playerName}`;
+    }
+
+
     updateDebug() {
         const { vertices, colors } = this.world.debugRender();
         this.debugMesh.geometry.setAttribute("position", new THREE.BufferAttribute(vertices, 3));
@@ -571,14 +691,6 @@ export class Engine {
         const vector = new THREE.Vector3(0, 0, -1);
         vector.applyQuaternion(this.camera.quaternion);
         this.flashlight.target.position.copy(this.camera.position).add(vector);
-
-
-        // Nextbot-Player collision check
-        const result = this.entityManager.checkCollisions(this.camera.position);
-        if (result && result.type === "GAME_OVER") {
-            //alert("JASON CAUGHT YOU!");
-            //window.location.reload();
-        }
     }
 
 

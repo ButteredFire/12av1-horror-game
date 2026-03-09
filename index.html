@@ -36,14 +36,21 @@
           STATUS: <span id="host-status">WAITING FOR PLAYERS</span>
         </div>
     </div>
+
+
+    <div id="invincible-shield-hud" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; border:20px solid rgba(0,255,0,0.2); pointer-events:none; box-sizing:border-box;">
+    </div>
     
 
 
     <div id="timer-display" style="position:fixed; top:20px; left:50%; transform:translateX(-50%); color:white; font-family:monospace; font-size:32px; z-index:100;"></div>
 
-
-
+  
     <div id="player-hud" style="position:fixed; top:5%; right:5%; background:rgba(0,0,0,0.5); padding:10px; border-radius:5px; color:white; font-family:monospace; display:none; z-index:100;">
+      <div style="font-size: 18px; margin-bottom: 10px;">
+          🪙 <span id="local-coin-count" style="color: #ffd700; font-weight: bold;">0</span>
+      </div>
+      
       <div style="color:#00d2ff; font-weight:bold; border-bottom:1px solid #00d2ff; margin-bottom:5px;">TOP 3 RAGAMUFFINS</div>
       <div id="player-leaderboard-mini"></div>
     </div>
@@ -53,6 +60,10 @@
             <h3 style="margin-top:0; border-bottom:1px solid #0f0;">ACTIVE PLAYER DATA</h3>
             <div id="host-leaderboard-full"></div>
         </div>
+    </div>
+
+    <div id="pip-container" style="display:none; position:fixed; bottom:5%; left:5%; width:45vw; height:45vh; border:2px solid #0f0; background:#000; z-index:300; overflow:hidden;">
+        <div style="position:absolute; top:0; width:100%; background:rgba(0,255,0,0.2); color:#0f0; font-size:20px; padding:2px; font-family:monospace;">LIVE FEED: <span id="pip-player-name">NONE</span></div>
     </div>
 
 
@@ -74,6 +85,7 @@
     <!-- Player & game telemetry data-->
     <div id="telemetry">
       <h3>Server: <span id="server-joined"></span></h3>
+      <h3>Player: <span id="player-name"></span></h3>
       <h3>Position: <span id="player-pos"></span></h3>
     </div>
 
