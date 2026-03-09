@@ -109,7 +109,7 @@ export class EntityManager {
     }
 
 
-    createNameplate(name) {
+    createNameplate(name, clientIsHost) {
         const canvas = document.createElement("canvas");
         const ctx = canvas.getContext("2d");
 
@@ -138,14 +138,14 @@ export class EntityManager {
         const sprite = new THREE.Sprite(spriteMat);
         
         // Convert pixels to 3D world units
-        const worldScale = 0.01; 
+        const worldScale = clientIsHost ? 0.3 : 0.01; 
         sprite.scale.set(
             canvas.width * worldScale, 
             canvas.height * worldScale, 
             1
         );
 
-        sprite.position.y = CONSTS.PLAYER_HEIGHT + 0.75; 
+        sprite.position.y = CONSTS.PLAYER_HEIGHT + (clientIsHost ? 15.0 : 0.75); 
         
         return sprite;
     }
@@ -181,7 +181,7 @@ export class EntityManager {
 
         const group = new THREE.Group();
         const model = this.mannequinTemplate.clone();
-        const nameplate = this.createNameplate(data.playerName);
+        const nameplate = this.createNameplate(data.playerName, clientIsHost);
         const flashlight = new THREE.SpotLight(0xffffff, 20, 30, Math.PI / 3, 0.5, 1);
 
         flashlight.castShadow = true;
@@ -216,7 +216,7 @@ export class EntityManager {
             targetRot: data.ry
         });
 
-        this.createPlayerLabel(data.isHost, this.remotePlayers.get(id), data.playerName);
+        //this.createPlayerLabel(data.isHost, this.remotePlayers.get(id), data.playerName);
 
         this.updateRemotePlayer(id, data);
     }

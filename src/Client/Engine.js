@@ -43,7 +43,7 @@ export class Engine {
         this.initGraphics();
         this.initPhysWorld();
 
-        const PROD_SERVERS = ["https://api.oriviet.org", "https://win-api.oriviet.org"];
+        const PROD_SERVERS = ["https://api.oriviet.org"];
         const DEV_SERVERS = ["http://localhost:3000"];
 
         this.texLoader = new THREE.TextureLoader();
@@ -55,7 +55,7 @@ export class Engine {
 
         this.audioLoader = new THREE.AudioLoader();
 
-        this.network = new NetworkManager(PROD_SERVERS, this.scene, this.playerName);
+        this.network = new NetworkManager(DEV_SERVERS, this.scene, this.playerName);
         this.controls = new PlayerController(this.world, this.camera, this.renderer.domElement);
         this.entityManager = new EntityManager(this.world, this.scene, this.listener, this.texLoader, this.gltfLoader, this.audioLoader);
         this.mapManager = new MapManager(this.world, this.scene, this.gltfLoader);
@@ -226,6 +226,7 @@ export class Engine {
             pipContainer.style.display = "block";
         
             this.pipCamera = new THREE.PerspectiveCamera(75, pipWidth / pipHeight, 0.1, 1000);
+            this.pipCamera.up.set(0, 0, -1);
 
             this.currentPipTargetId = null;
             this.pipCycleInterval = 1000; // 10 seconds per player
@@ -321,9 +322,6 @@ export class Engine {
         
         this.network.addEvent("coinCollected", (data) => {
             this.entityManager.removeCoin(data.coinId);
-            if (data.playerId === this.network.playerID) {
-                document.title = `Score: ${data.score}`;
-            }
         });
 
 
@@ -422,12 +420,12 @@ export class Engine {
 
     setupHost() {
         // 1. Disable normal controls
-        if (this.controls) this.controls.enabled = false;
+        if (this.controls) this.controls.enableControls = false;
         
         this.mapManager.hideXrayGeometry();
 
         // 2. Position camera high above the school
-        this.camera.position.set(0, 70, 0); 
+        this.camera.position.set(0, 150, 0); 
         this.camera.lookAt(0, 0, 0);
 
         document.getElementById("host-tactical-hud").style.display = "block";
@@ -454,9 +452,9 @@ export class Engine {
         this.renderer.setClearColor(0, 1);
 
         // 3. TOP-DOWN CAMERA
-        this.camera.position.set(0, 100, 0); // High altitude
+        this.camera.position.set(0, 200, 0); // High altitude
         this.camera.lookAt(0, 0, 0);
-        this.camera.up.set(0, 0, -1); // Fix orientation for top-down
+        //this.camera.up.set(0, 0, -1); // Fix orientation for top-down
 
         // 2. Kill the Darkness (Flashlight and dark AmbientLight)
         this.scene.traverse((child) => {
@@ -464,8 +462,16 @@ export class Engine {
                 child.intensity = 2.0; // High brightness
             }
 
-            if (child.name.includes("XR")) {
-                child.visible = false;
+            if (child.isMesh) {
+                if (child.name.includes("XR")) {
+                    child.visible = false;
+                }
+    
+                const wireColor = 0xff0000;
+                child.material = new THREE.MeshBasicMaterial({
+                    color: wireColor,
+                    wireframe: true
+                });
             }
         });
 
@@ -477,24 +483,34 @@ export class Engine {
         document.getElementById("host-hud").style.display = "block";
 
 
-        this.isDragging = false;
-        this.previousMousePosition = { x: 0, y: 0 };
-
-        window.addEventListener('mousedown', () => this.isDragging = true);
-        window.addEventListener('mouseup', () => this.isDragging = false);
-        window.addEventListener('mousemove', (e) => {
-            if (!this.isDragging || !this.isHost) return;
-
-            const deltaX = e.clientX - this.previousMousePosition.x;
-            const deltaY = e.clientY - this.previousMousePosition.y;
-
-            // Move camera horizontally based on drag
-            // Sensitivity 0.1 works well for 100m height
-            this.camera.position.x -= deltaX * 0.2;
-            this.camera.position.z -= deltaY * 0.2;
-
+        window.addEventListener('mousedown', (e) => {
+            this.isDragging = true;
+            // Set the anchor point immediately so the first delta is 0
             this.previousMousePosition = { x: e.clientX, y: e.clientY };
         });
+        
+        window.addEventListener('mouseup', () => this.isDragging = false);
+        
+        window.addEventListener('mousemove', (e) => {
+            if (!this.isDragging || !this.isHost) {
+                // Even if not dragging, keep updating position to track the "pre-click" mouse
+                this.previousMousePosition = { x: e.clientX, y: e.clientY };
+                return;
+            }
+        
+            const deltaX = e.clientX - this.previousMousePosition.x;
+            const deltaY = e.clientY - this.previousMousePosition.y;
+        
+            this.camera.position.x -= deltaX * 0.2;
+            this.camera.position.z -= deltaY * 0.2;
+        
+            this.previousMousePosition = { x: e.clientX, y: e.clientY };
+        });
+
+        window.addEventListener('wheel', (event) => {
+            this.camera.position.y += event.deltaY * 0.2;
+        });
+        
     }
 
 
@@ -635,20 +651,19 @@ export class Engine {
 
 
     update(dt) {
-        if (this.isHost) return;
-
-        //this.updateDebug();
         this.mapManager.update(dt, this.camera.position);
-
-        this.camera.getWorldDirection(this.worldDirection);
-        this.network.sync(this.camera.position, this.worldDirection);
-
-        this.controls.update(dt);
+        this.controls.update(dt, this.isHost);
         this.entityManager.update(dt);
-        this.entityManager.checkCoinCollisions(this.camera.position, this.network.socket);
 
-        this.updatePlayer(dt);
-        this.updateUI();
+        if (!this.isHost) {
+            this.entityManager.checkCoinCollisions(this.camera.position, this.network.socket, this.isHost);
+
+            this.camera.getWorldDirection(this.worldDirection);
+            this.network.sync(this.camera.position, this.worldDirection);
+
+            this.updatePlayer(dt);
+            this.updateUI();
+        }
     }
 
 
@@ -657,8 +672,21 @@ export class Engine {
         const target = players[0];
 
         if (target && target.mesh) {
-            this.pipCamera.position.copy(target.mesh.position);
-            this.pipCamera.quaternion.copy(target.mesh.quaternion);
+            // Use a temp vector to grab the absolute world position
+            const worldPos = new THREE.Vector3();
+            target.mesh.getWorldPosition(worldPos);
+
+            this.pipCamera.position.set(
+                worldPos.x, 
+                worldPos.y + 1.5, // Eye level
+                worldPos.z
+            );
+
+            // Ensure the camera follows the rotation
+            const worldDir = new THREE.Vector3();
+            target.mesh.getWorldDirection(worldDir);
+            const lookTarget = new THREE.Vector3().copy(this.pipCamera.position).add(worldDir);
+            this.pipCamera.lookAt(lookTarget);
         }
     }
 

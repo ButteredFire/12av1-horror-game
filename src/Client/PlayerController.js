@@ -15,6 +15,7 @@ export class PlayerController {
         this.defaultSpawnPos = { x: 0, y: CONSTS.PLAYER_HEIGHT, z: 0 }; // Start 5 meters in the air to avoid stuck-in-floor
 
         this.playerInitialized = false;
+        this.enableControls = true;
     }
 
 
@@ -84,7 +85,7 @@ export class PlayerController {
     initDesktop() {
         const instructions = document.getElementById("instructions");
         document.addEventListener("click", () => {
-            if (!this.isMobile) this.controls.lock();
+            if (!this.isMobile && this.enableControls) this.controls.lock();
         });
 
         this.keys = {};
@@ -165,7 +166,7 @@ export class PlayerController {
     }
 
 
-    update(dt) {
+    update(dt, clientIsHost) {
         const speedDT = CONSTS.PLAYER_SPEED * dt;
         const movement = new THREE.Vector3(0, 0, 0);
 
@@ -177,38 +178,37 @@ export class PlayerController {
         const right = new THREE.Vector3().crossVectors(this.camera.up, forward).negate();
 
         // Sum up the intended move
-        if (this.isMobile) {
-            movement.addScaledVector(forward, this.moveState.forward * speedDT);
-            movement.addScaledVector(right, this.moveState.right * speedDT);
-        } else if (this.controls.isLocked) {
-            if (this.keys["KeyW"]) movement.addScaledVector(forward, speedDT);
-            if (this.keys["KeyS"]) movement.addScaledVector(forward, -speedDT);
-            if (this.keys["KeyA"]) movement.addScaledVector(right, -speedDT);
-            if (this.keys["KeyD"]) movement.addScaledVector(right, speedDT);
+        if (this.enableControls) {
+            if (this.isMobile) {
+                movement.addScaledVector(forward, this.moveState.forward * speedDT);
+                movement.addScaledVector(right, this.moveState.right * speedDT);
+            } else if (this.controls.isLocked) {
+                if (this.keys["KeyW"]) movement.addScaledVector(forward, speedDT);
+                if (this.keys["KeyS"]) movement.addScaledVector(forward, -speedDT);
+                if (this.keys["KeyA"]) movement.addScaledVector(right, -speedDT);
+                if (this.keys["KeyD"]) movement.addScaledVector(right, speedDT);
+            }
         }
+        
 
-        // Check if we are on the ground before applying more gravity
-        //if (this.controller.computedGround()) {
-        //    movement.y = 0;
-        //} else {
+        if (!clientIsHost) {
             movement.y = -CONSTS.ACCELERATION_PER_FRAME;
-        //}
 
+            // 4. ASK RAPIER TO CALCULATE THE MOVE
+            this.controller.computeColliderMovement(this.collider, movement);
+            const correctedMove = this.controller.computedMovement();
 
-        // 4. ASK RAPIER TO CALCULATE THE MOVE
-        this.controller.computeColliderMovement(this.collider, movement);
-        const correctedMove = this.controller.computedMovement();
+            // 5. Apply the movement to the body and sync camera
+            const currentPos = this.body.translation();
+            this.body.setNextKinematicTranslation({
+                x: currentPos.x + correctedMove.x,
+                y: currentPos.y + correctedMove.y,
+                z: currentPos.z + correctedMove.z
+            });
 
-        // 5. Apply the movement to the body and sync camera
-        const currentPos = this.body.translation();
-        this.body.setNextKinematicTranslation({
-            x: currentPos.x + correctedMove.x,
-            y: currentPos.y + correctedMove.y,
-            z: currentPos.z + correctedMove.z
-        });
-
-        this.camera.position.copy(this.body.translation());
-        this.camera.position.y += 1.0; // Offset camera to eye-level
+            this.camera.position.copy(this.body.translation());
+            this.camera.position.y += 1.0; // Offset camera to eye-level
+        }
     }
 
 
