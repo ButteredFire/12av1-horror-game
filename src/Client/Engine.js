@@ -55,7 +55,7 @@ export class Engine {
 
         this.audioLoader = new THREE.AudioLoader();
 
-        this.network = new NetworkManager(DEV_SERVERS, this.scene, this.playerName);
+        this.network = new NetworkManager(PROD_SERVERS, this.scene, this.playerName);
         this.controls = new PlayerController(this.world, this.camera, this.renderer.domElement);
         this.entityManager = new EntityManager(this.world, this.scene, this.listener, this.texLoader, this.gltfLoader, this.audioLoader);
         this.mapManager = new MapManager(this.world, this.scene, this.gltfLoader);
